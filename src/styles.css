@@ -86,6 +86,33 @@ button:disabled {
   letter-spacing: -0.02em;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-picker {
+  min-width: 0;
+}
+
+.board-picker select {
+  width: auto;
+  max-width: 11rem;
+  padding: 8px 10px;
+}
+
+.board-title {
+  margin: 0;
+  max-width: 11rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 h1,
 h2 {
   margin: 0;
@@ -129,6 +156,17 @@ h2 {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+}
+
+.name-button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-align: left;
 }
 
 .score-line {
@@ -390,6 +428,7 @@ h2 {
 }
 
 .field span,
+.field-label,
 .choice legend,
 .invite-block span {
   font-size: 0.85rem;
@@ -503,6 +542,117 @@ textarea {
   justify-content: flex-end;
 }
 
+.history-sheet {
+  --kept: #1a7f37;
+  --lost: #cf222e;
+  --cell: 14px;
+  --gap: 3px;
+  overflow: hidden;
+}
+
+.history-scroll {
+  margin-top: 14px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.history-months,
+.history-body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.history-dow-spacer {
+  flex: 0 0 28px;
+  width: 28px;
+}
+
+.history-dows {
+  display: flex;
+  flex: 0 0 28px;
+  flex-direction: column;
+  gap: var(--gap);
+  width: 28px;
+}
+
+.history-dows span,
+.history-month {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: var(--cell);
+}
+
+.history-month {
+  width: var(--cell);
+  height: 16px;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.history-weeks {
+  display: flex;
+  gap: var(--gap);
+}
+
+.history-week {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.history-cell {
+  display: block;
+  width: var(--cell);
+  height: var(--cell);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.history-cell.pad {
+  background: transparent;
+  border-color: transparent;
+}
+
+.history-cell.flat {
+  background: #fff;
+  border-color: var(--line-strong);
+}
+
+.history-cell.kept {
+  background: color-mix(in srgb, var(--kept) calc(var(--level) * 100%), #fff);
+  border-color: color-mix(in srgb, var(--kept) calc(var(--level) * 45%), var(--line));
+}
+
+.history-cell.lost {
+  background: color-mix(in srgb, var(--lost) calc(var(--level) * 100%), #fff);
+  border-color: color-mix(in srgb, var(--lost) calc(var(--level) * 45%), var(--line));
+}
+
+.history-cell.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.history-detail {
+  margin: 12px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.history-legend .history-cell {
+  pointer-events: none;
+}
+
 .invite-block {
   margin-top: 18px;
 }
@@ -515,6 +665,28 @@ textarea {
 .invite-row code {
   font-size: 1.15rem;
   letter-spacing: 0.16em;
+}
+
+.people {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.people li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stack .button {
+  text-align: left;
 }
 
 .error {

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import type { DayPhase } from '../lib/useDayColumn';
 import { formatDayLabel } from '../lib/dates';
 import { formatPoints, scoreParticipant } from '../lib/score';
 import type { Check, Participant, Track } from '../types';
+import { HistoryModal } from './HistoryModal';
 import { ProgressBar } from './ProgressBar';
 import { TrackRow } from './TrackRow';
 
@@ -38,11 +40,16 @@ export function PersonPanel({
 }: Props) {
   const score = scoreParticipant(allTracks, checks, person.id, day);
   const columnClass = phase === 'shown' ? 'day-column' : `day-column ${phase}`;
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <section className="panel" aria-label={person.display_name}>
       <div className="panel-head">
-        <h2>{person.display_name}</h2>
+        <h2>
+          <button type="button" className="name-button" onClick={() => setHistoryOpen(true)}>
+            {person.display_name}
+          </button>
+        </h2>
         <p className="score-line">
           <span className="score" data-score={score}>
             {formatPoints(score)}
@@ -76,6 +83,17 @@ export function PersonPanel({
         <button type="button" className="add-button" onClick={onAdd} disabled={addDisabled} aria-label="Add a habit or vice">
           +
         </button>
+      ) : null}
+      {historyOpen ? (
+        <HistoryModal
+          name={person.display_name}
+          tracks={allTracks}
+          checks={checks}
+          ownerId={person.id}
+          today={day}
+          timeZone={timeZone}
+          onClose={() => setHistoryOpen(false)}
+        />
       ) : null}
     </section>
   );

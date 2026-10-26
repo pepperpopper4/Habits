@@ -1,7 +1,9 @@
 -- Habits board schema for Supabase.
--- Run this once in the SQL editor. It is safe to run again.
+-- Run this in the SQL editor. It is safe to run again.
+-- If the board already exists, run it again so one account can join
+-- several boards, a creator can delete a board, and every member is listed.
 -- In Authentication → Providers → Email, turn off "Confirm email"
--- so both people can sign in immediately.
+-- so people can sign in immediately.
 
 begin;
 
@@ -9,6 +11,7 @@ create table if not exists public.pairs (
   id uuid primary key default gen_random_uuid(),
   goal integer not null default 100 check (goal between 0 and 100000),
   notes text not null default '' check (char_length(notes) <= 4000),
+  title text not null default 'Board',
   timezone text not null,
   invite_code text not null unique check (invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$'),
   created_at timestamptz not null default now()
@@ -17,17 +20,20 @@ create table if not exists public.pairs (
 create table if not exists public.participants (
   id uuid primary key default gen_random_uuid(),
   pair_id uuid not null references public.pairs (id) on delete cascade,
-  user_id uuid not null unique references auth.users (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
   display_name text not null check (char_length(display_name) between 1 and 32),
-  seat integer not null check (seat in (1, 2)),
-  unique (pair_id, seat)
+  seat integer not null,
+  unique (pair_id, seat),
+  constraint participants_seat_positive check (seat >= 1),
+  constraint participants_pair_user_key unique (pair_id, user_id)
 );
 
 create table if not exists public.offers (
   id uuid primary key default gen_random_uuid(),
   pair_id uuid not null references public.pairs (id) on delete cascade,
   proposer_id uuid not null references public.participants (id) on delete cascade,
-  awaiting_id uuid not null references public.participants (id) on delete cascade,
+  awaiting_id uuid references public.participants (id) on delete cascade,
+  countered_by uuid references public.participants (id) on delete set null,
   name text not null check (char_length(name) between 1 and 60),
   kind text not null check (kind in ('habit', 'vice')),
   gain integer not null check (gain between 1 and 99),
@@ -57,6 +63,55 @@ create table if not exists public.checks (
   unique (track_id, day)
 );
 
+alter table public.pairs add column if not exists title text not null default 'Board';
+
+do $participants_migrate$
+declare
+  constraint_name text;
+begin
+  for constraint_name in
+    select con.conname
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'public'
+      and rel.relname = 'participants'
+      and con.contype = 'u'
+      and pg_get_constraintdef(con.oid) ilike '%user_id%'
+      and pg_get_constraintdef(con.oid) not ilike '%pair_id%'
+  loop
+    execute format('alter table public.participants drop constraint %I', constraint_name);
+  end loop;
+
+  alter table public.participants drop constraint if exists participants_seat_check;
+  for constraint_name in
+    select con.conname
+    from pg_constraint con
+    where con.conrelid = 'public.participants'::regclass
+      and con.contype = 'c'
+      and pg_get_constraintdef(con.oid) ilike '%seat%'
+      and pg_get_constraintdef(con.oid) ~ '[(,] *2 *[),]'
+  loop
+    execute format('alter table public.participants drop constraint %I', constraint_name);
+  end loop;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'participants_seat_positive' and conrelid = 'public.participants'::regclass
+  ) then
+    alter table public.participants add constraint participants_seat_positive check (seat >= 1);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'participants_pair_user_key' and conrelid = 'public.participants'::regclass
+  ) then
+    alter table public.participants add constraint participants_pair_user_key unique (pair_id, user_id);
+  end if;
+end
+$participants_migrate$;
+
+alter table public.offers alter column awaiting_id drop not null;
+alter table public.offers add column if not exists countered_by uuid references public.participants (id) on delete set null;
+
 create index if not exists offers_pair_status_idx on public.offers (pair_id, status);
 create index if not exists tracks_pair_idx on public.tracks (pair_id, created_at);
 create index if not exists checks_pair_idx on public.checks (pair_id);
@@ -78,6 +133,34 @@ begin
 end;
 $$;
 
+create or replace function public.is_pair_member(p_pair_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.participants
+    where pair_id = p_pair_id
+      and user_id = auth.uid()
+  )
+$$;
+
+create or replace function public.participant_id_for(p_pair_id uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id
+  from public.participants
+  where pair_id = p_pair_id
+    and user_id = auth.uid()
+$$;
+
 create or replace function public.current_participant_id()
 returns uuid
 language sql
@@ -88,6 +171,7 @@ as $$
   select id
   from public.participants
   where user_id = auth.uid()
+  limit 1
 $$;
 
 create or replace function public.current_pair_id()
@@ -100,6 +184,7 @@ as $$
   select pair_id
   from public.participants
   where user_id = auth.uid()
+  limit 1
 $$;
 
 create or replace function public.pair_today(p_pair_id uuid)
@@ -112,7 +197,7 @@ as $$
   select (pg_catalog.timezone(p.timezone, pg_catalog.now()))::date
   from public.pairs p
   where p.id = p_pair_id
-    and p.id = public.current_pair_id()
+    and public.is_pair_member(p_pair_id)
 $$;
 
 create or replace function public.protect_pairs()
@@ -135,6 +220,10 @@ begin
   if char_length(new.notes) > 4000 then
     raise exception 'notes must be 4000 characters or fewer';
   end if;
+  if new.title is null or char_length(btrim(new.title)) < 1 or char_length(btrim(new.title)) > 40 then
+    raise exception 'board name must be 1 to 40 characters';
+  end if;
+  new.title := btrim(new.title);
   if new.timezone is null or char_length(btrim(new.timezone)) = 0 then
     raise exception 'timezone is required';
   end if;
@@ -168,9 +257,6 @@ begin
   if auth.uid() is null then
     raise exception 'sign in first';
   end if;
-  if exists (select 1 from public.participants where user_id = auth.uid()) then
-    raise exception 'you already belong to a board';
-  end if;
   if char_length(clean_name) < 1 or char_length(clean_name) > 32 then
     raise exception 'name must be 1 to 32 characters';
   end if;
@@ -186,8 +272,8 @@ begin
     exit when not exists (select 1 from public.pairs where invite_code = code);
   end loop;
 
-  insert into public.pairs (goal, notes, timezone, invite_code)
-  values (100, '', p_timezone, code)
+  insert into public.pairs (goal, notes, title, timezone, invite_code)
+  values (100, '', left(clean_name || '''s board', 40), p_timezone, code)
   returning * into new_pair;
 
   insert into public.participants (pair_id, user_id, display_name, seat)
@@ -207,12 +293,10 @@ declare
   the_pair public.pairs;
   clean_name text := btrim(p_display_name);
   clean_code text := upper(btrim(p_invite_code));
+  next_seat integer;
 begin
   if auth.uid() is null then
     raise exception 'sign in first';
-  end if;
-  if exists (select 1 from public.participants where user_id = auth.uid()) then
-    raise exception 'you already belong to a board';
   end if;
   if char_length(clean_name) < 1 or char_length(clean_name) > 32 then
     raise exception 'name must be 1 to 32 characters';
@@ -226,18 +310,25 @@ begin
   if not found then
     raise exception 'invite code not found';
   end if;
-  if exists (select 1 from public.participants where pair_id = the_pair.id and seat = 2) then
-    raise exception 'this board already has two people';
+  if exists (
+    select 1 from public.participants where pair_id = the_pair.id and user_id = auth.uid()
+  ) then
+    raise exception 'you are already on this board';
   end if;
 
+  select coalesce(max(seat), 0) + 1 into next_seat
+  from public.participants
+  where pair_id = the_pair.id;
+
   insert into public.participants (pair_id, user_id, display_name, seat)
-  values (the_pair.id, auth.uid(), clean_name, 2);
+  values (the_pair.id, auth.uid(), clean_name, next_seat);
 
   return jsonb_build_object('pair_id', the_pair.id);
 end;
 $$;
 
 create or replace function public.propose_track(
+  p_pair_id uuid,
   p_name text,
   p_kind text,
   p_gain integer,
@@ -251,6 +342,7 @@ as $$
 declare
   me public.participants;
   other_id uuid;
+  other_count integer;
   created public.offers;
   clean_name text := btrim(p_name);
 begin
@@ -258,18 +350,26 @@ begin
     raise exception 'sign in first';
   end if;
 
-  select * into me from public.participants where user_id = auth.uid();
-  if not found then
-    raise exception 'you are not on a board';
-  end if;
-
-  select id into other_id
+  select * into me
   from public.participants
-  where pair_id = me.pair_id and id <> me.id;
-
-  if other_id is null then
-    raise exception 'the other person has not joined yet';
+  where user_id = auth.uid() and pair_id = p_pair_id;
+  if not found then
+    raise exception 'you are not on this board';
   end if;
+
+  select count(*)::integer into other_count
+  from public.participants
+  where pair_id = p_pair_id and id <> me.id;
+  if other_count = 0 then
+    raise exception 'someone else has to join first';
+  elsif other_count = 1 then
+    select id into other_id
+    from public.participants
+    where pair_id = p_pair_id and id <> me.id;
+  else
+    other_id := null;
+  end if;
+
   if char_length(clean_name) < 1 or char_length(clean_name) > 60 then
     raise exception 'name must be 1 to 60 characters';
   end if;
@@ -288,6 +388,37 @@ begin
 end;
 $$;
 
+create or replace function public.propose_track(
+  p_name text,
+  p_kind text,
+  p_gain integer,
+  p_loss integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  memberships integer;
+  only_pair uuid;
+begin
+  select count(*)::integer into memberships
+  from public.participants
+  where user_id = auth.uid();
+  if memberships = 0 then
+    raise exception 'you are not on a board';
+  end if;
+  if memberships > 1 then
+    raise exception 'open the board you mean';
+  end if;
+  select pair_id into only_pair
+  from public.participants
+  where user_id = auth.uid();
+  return public.propose_track(only_pair, p_name, p_kind, p_gain, p_loss);
+end;
+$$;
+
 create or replace function public.respond_offer(
   p_offer_id uuid,
   p_action text,
@@ -301,35 +432,39 @@ set search_path = public
 as $$
 declare
   me_id uuid;
-  other_id uuid;
+  other_count integer;
+  sole_other uuid;
   off public.offers;
   today date;
 begin
-  select id into me_id from public.participants where user_id = auth.uid();
-  if me_id is null then
-    raise exception 'you are not on a board';
-  end if;
-
   select * into off from public.offers where id = p_offer_id for update;
-  if not found then
-    raise exception 'offer not found';
-  end if;
-  if off.pair_id is distinct from public.current_pair_id() then
+  if not found or not public.is_pair_member(off.pair_id) then
     raise exception 'offer not found';
   end if;
   if off.status <> 'pending' then
     raise exception 'offer is closed';
   end if;
 
+  select id into me_id
+  from public.participants
+  where pair_id = off.pair_id and user_id = auth.uid();
+  if me_id is null then
+    raise exception 'you are not on this board';
+  end if;
+
   if p_action = 'withdraw' then
-    if off.proposer_id <> me_id or off.awaiting_id = me_id then
+    if off.proposer_id <> me_id or off.awaiting_id is not distinct from me_id then
       raise exception 'cannot withdraw';
     end if;
     update public.offers set status = 'declined' where id = off.id returning * into off;
     return to_jsonb(off);
   end if;
 
-  if off.awaiting_id <> me_id then
+  if off.awaiting_id is null then
+    if off.proposer_id = me_id then
+      raise exception 'not your turn';
+    end if;
+  elsif off.awaiting_id <> me_id then
     raise exception 'not your turn';
   end if;
 
@@ -340,16 +475,32 @@ begin
     if p_gain is null or p_loss is null or p_gain < 1 or p_loss < 1 or p_gain > 99 or p_loss > 99 then
       raise exception 'points must be from 1 to 99';
     end if;
-    select id into other_id
-    from public.participants
-    where pair_id = off.pair_id and id <> me_id;
-    if other_id is null then
-      raise exception 'the other person has not joined yet';
+    if me_id = off.proposer_id then
+      select count(*)::integer into other_count
+      from public.participants
+      where pair_id = off.pair_id and id <> me_id;
+      if other_count = 0 then
+        raise exception 'someone else has to join first';
+      elsif other_count = 1 then
+        select id into sole_other
+        from public.participants
+        where pair_id = off.pair_id and id <> me_id;
+        update public.offers
+          set gain = p_gain, loss = p_loss, awaiting_id = sole_other, countered_by = me_id
+          where id = off.id
+          returning * into off;
+      else
+        update public.offers
+          set gain = p_gain, loss = p_loss, awaiting_id = null, countered_by = me_id
+          where id = off.id
+          returning * into off;
+      end if;
+    else
+      update public.offers
+        set gain = p_gain, loss = p_loss, awaiting_id = off.proposer_id, countered_by = me_id
+        where id = off.id
+        returning * into off;
     end if;
-    update public.offers
-      set gain = p_gain, loss = p_loss, awaiting_id = other_id
-      where id = off.id
-      returning * into off;
     return to_jsonb(off);
   elsif p_action = 'accept' then
     update public.offers set status = 'accepted' where id = off.id returning * into off;
@@ -363,23 +514,56 @@ begin
 end;
 $$;
 
+create or replace function public.delete_pair(p_pair_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  seat_no integer;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select seat into seat_no
+  from public.participants
+  where pair_id = p_pair_id and user_id = auth.uid();
+  if seat_no is null then
+    raise exception 'you are not on this board';
+  end if;
+  if seat_no <> 1 then
+    raise exception 'only the person who created this board can delete it';
+  end if;
+  delete from public.pairs where id = p_pair_id;
+end;
+$$;
+
 revoke all on function public.generate_invite_code() from public, anon, authenticated;
 revoke all on function public.protect_pairs() from public, anon, authenticated;
+revoke all on function public.is_pair_member(uuid) from public, anon, authenticated;
+revoke all on function public.participant_id_for(uuid) from public, anon, authenticated;
 revoke all on function public.current_participant_id() from public, anon, authenticated;
 revoke all on function public.current_pair_id() from public, anon, authenticated;
 revoke all on function public.pair_today(uuid) from public, anon, authenticated;
 revoke all on function public.create_pair(text, text) from public, anon, authenticated;
 revoke all on function public.join_pair(text, text) from public, anon, authenticated;
+revoke all on function public.propose_track(uuid, text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.propose_track(text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.respond_offer(uuid, text, integer, integer) from public, anon, authenticated;
+revoke all on function public.delete_pair(uuid) from public, anon, authenticated;
 
+grant execute on function public.is_pair_member(uuid) to authenticated;
+grant execute on function public.participant_id_for(uuid) to authenticated;
 grant execute on function public.current_participant_id() to authenticated;
 grant execute on function public.current_pair_id() to authenticated;
 grant execute on function public.pair_today(uuid) to authenticated;
 grant execute on function public.create_pair(text, text) to authenticated;
 grant execute on function public.join_pair(text, text) to authenticated;
+grant execute on function public.propose_track(uuid, text, text, integer, integer) to authenticated;
 grant execute on function public.propose_track(text, text, integer, integer) to authenticated;
 grant execute on function public.respond_offer(uuid, text, integer, integer) to authenticated;
+grant execute on function public.delete_pair(uuid) to authenticated;
 
 alter table public.pairs enable row level security;
 alter table public.participants enable row level security;
@@ -390,46 +574,46 @@ alter table public.checks enable row level security;
 drop policy if exists pairs_select on public.pairs;
 create policy pairs_select on public.pairs
   for select to authenticated
-  using (id = public.current_pair_id());
+  using (public.is_pair_member(id));
 
 drop policy if exists pairs_update on public.pairs;
 create policy pairs_update on public.pairs
   for update to authenticated
-  using (id = public.current_pair_id())
-  with check (id = public.current_pair_id());
+  using (public.is_pair_member(id))
+  with check (public.is_pair_member(id));
 
 drop policy if exists participants_select on public.participants;
 create policy participants_select on public.participants
   for select to authenticated
-  using (pair_id = public.current_pair_id() or user_id = auth.uid());
+  using (public.is_pair_member(pair_id) or user_id = auth.uid());
 
 drop policy if exists offers_select on public.offers;
 create policy offers_select on public.offers
   for select to authenticated
-  using (pair_id = public.current_pair_id());
+  using (public.is_pair_member(pair_id));
 
 drop policy if exists tracks_select on public.tracks;
 create policy tracks_select on public.tracks
   for select to authenticated
-  using (pair_id = public.current_pair_id());
+  using (public.is_pair_member(pair_id));
 
 drop policy if exists checks_select on public.checks;
 create policy checks_select on public.checks
   for select to authenticated
-  using (pair_id = public.current_pair_id());
+  using (public.is_pair_member(pair_id));
 
 drop policy if exists checks_insert on public.checks;
 create policy checks_insert on public.checks
   for insert to authenticated
   with check (
-    pair_id = public.current_pair_id()
+    public.is_pair_member(pair_id)
     and day = public.pair_today(pair_id)
     and exists (
       select 1
       from public.tracks t
       where t.id = track_id
         and t.pair_id = pair_id
-        and t.owner_id = public.current_participant_id()
+        and t.owner_id = public.participant_id_for(pair_id)
         and t.starts_on <= day
     )
   );
@@ -438,13 +622,13 @@ drop policy if exists checks_delete on public.checks;
 create policy checks_delete on public.checks
   for delete to authenticated
   using (
-    pair_id = public.current_pair_id()
+    public.is_pair_member(pair_id)
     and day = public.pair_today(pair_id)
     and exists (
       select 1
       from public.tracks t
       where t.id = track_id
-        and t.owner_id = public.current_participant_id()
+        and t.owner_id = public.participant_id_for(pair_id)
     )
   );
 

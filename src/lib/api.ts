@@ -7,6 +7,9 @@ export function messageFrom(error: unknown): string {
     if (code === '42501' || /row-level security/i.test(error.message)) {
       return 'That day is locked.';
     }
+    if (/could not find the function/i.test(error.message) || /schema cache/i.test(error.message)) {
+      return 'Update the database first. In Supabase, open the SQL editor and run supabase/schema.sql again.';
+    }
     return error.message;
   }
   return 'Something went wrong.';
@@ -36,30 +39,56 @@ export async function fetchBoard(pairId: string): Promise<BoardData> {
   };
 }
 
-export async function createPair(displayName: string, timezone: string) {
-  const { error } = await supabase.rpc('create_pair', {
+function pairIdFrom(data: unknown): string {
+  if (data && typeof data === 'object' && 'pair_id' in data && typeof data.pair_id === 'string') {
+    return data.pair_id;
+  }
+  throw new Error('The board did not come back.');
+}
+
+export async function createPair(displayName: string, timezone: string): Promise<string> {
+  const { data, error } = await supabase.rpc('create_pair', {
     p_display_name: displayName,
     p_timezone: timezone,
   });
   if (error) throw error;
+  return pairIdFrom(data);
 }
 
-export async function joinPair(inviteCode: string, displayName: string) {
-  const { error } = await supabase.rpc('join_pair', {
+export async function joinPair(inviteCode: string, displayName: string): Promise<string> {
+  const { data, error } = await supabase.rpc('join_pair', {
     p_invite_code: inviteCode,
     p_display_name: displayName,
   });
   if (error) throw error;
+  return pairIdFrom(data);
 }
 
-export async function proposeTrack(input: { name: string; kind: Kind; gain: number; loss: number }) {
+export async function deletePair(pairId: string) {
+  const { error } = await supabase.rpc('delete_pair', { p_pair_id: pairId });
+  if (error) throw error;
+}
+
+export async function proposeTrack(
+  pairId: string,
+  input: { name: string; kind: Kind; gain: number; loss: number },
+) {
   const { error } = await supabase.rpc('propose_track', {
+    p_pair_id: pairId,
     p_name: input.name,
     p_kind: input.kind,
     p_gain: input.gain,
     p_loss: input.loss,
   });
-  if (error) throw error;
+  if (!error) return;
+  if (!/could not find the function/i.test(error.message) && !/schema cache/i.test(error.message)) throw error;
+  const legacy = await supabase.rpc('propose_track', {
+    p_name: input.name,
+    p_kind: input.kind,
+    p_gain: input.gain,
+    p_loss: input.loss,
+  });
+  if (legacy.error) throw legacy.error;
 }
 
 export async function respondToOffer(

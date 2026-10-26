@@ -7,7 +7,7 @@ type AuthProps = {
 };
 
 type PairProps = {
-  onJoined: () => void;
+  onJoined: (pairId: string) => void;
   onSignOut: () => void;
 };
 
@@ -121,8 +121,7 @@ export function PairScreen({ onJoined, onSignOut }: PairProps) {
     setError(null);
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      await createPair(clean, timezone);
-      onJoined();
+      onJoined(await createPair(clean, timezone));
     } catch (err) {
       setError(messageFrom(err));
     } finally {
@@ -144,8 +143,7 @@ export function PairScreen({ onJoined, onSignOut }: PairProps) {
     setBusy('join');
     setError(null);
     try {
-      await joinPair(code, cleanName);
-      onJoined();
+      onJoined(await joinPair(code, cleanName));
     } catch (err) {
       setError(messageFrom(err));
     } finally {

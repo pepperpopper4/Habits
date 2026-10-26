@@ -1,6 +1,6 @@
 # Habits
 
-A shared habit tracker for two people. It is a webpage you can save to an iPhone home screen. Both phones read and write the same board through Supabase.
+A shared habit tracker. It is a webpage you can save to an iPhone home screen. Everyone on a board reads and writes it through Supabase. One account can belong to several boards.
 
 A check marks a habit done or a vice avoided, and scores the gain. An empty box scores the loss. At midnight in the board's timezone, that day's column locks and leaves. Anything still unchecked stays a loss, even if nobody opened the app.
 
@@ -8,7 +8,7 @@ A check marks a habit done or a vice avoided, and scores the gain. An empty box 
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. In **Authentication → Providers → Email**, turn off **Confirm email**. Both of you can then sign up and sign in without waiting on a confirmation message.
-3. Open the SQL editor and run [supabase/schema.sql](supabase/schema.sql). That creates the tables, the access rules, and the live updates.
+3. Open the SQL editor and run [supabase/schema.sql](supabase/schema.sql). That creates the tables, the access rules, and the live updates. If the project already has the older two-person schema, run the same file again. The new app cannot join extra boards until that update has run.
 4. In **Project Settings → API**, copy the project URL and the anon public key.
 5. Copy `.env.example` to `.env.local` and fill in those two values:
 
@@ -32,10 +32,10 @@ GitHub Actions builds the site from the `main` branch. The Supabase URL and anon
 
 ## Using it
 
-The first person creates a board and gets a six-character invite code. The second person creates an account and joins with that code.
+Someone creates a board and gets a six-character invite code. Other people create accounts and join with that code. The same account can create or join more boards and switch between them.
 
-Each person checks their own list. The other list is visible and cannot be edited. New habits and vices are offers: the other person can accept the point ratio, counter with different numbers, or decline. The person who proposed it can withdraw while they are waiting.
+Each person checks their own list. Everyone else's lists are visible and cannot be edited. New habits and vices are offers. With one other person, that person accepts the point ratio, counters the numbers, or declines. With more people, any of them can. The person who proposed it can withdraw while they are waiting.
 
-Settings holds the shared point goal, the timezone that decides midnight, and one notes box. Leaving the notes box saves it. Wipe clears it for both people. It is a shared note, not a message thread.
+Settings holds the shared point goal, the timezone that decides midnight, the board name, the people on the board, and one notes box. Leaving the notes box saves it. Wipe clears it for everyone on the board. It is a shared note, not a message thread. The person who created the board can delete it.
 
 Keep the anon key in `.env.local`. Do not put the service role key in this app.

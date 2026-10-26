@@ -3,7 +3,7 @@ import { messageFrom, proposeTrack, respondToOffer } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useBoard } from '../lib/useBoard';
 import { useDayColumn } from '../lib/useDayColumn';
-import type { BoardData, Offer, Track } from '../types';
+import type { BoardData, Membership, Offer, Track } from '../types';
 import { AddTrackModal, type TrackDraft } from './AddTrackModal';
 import { OfferCard } from './OfferCard';
 import { PersonPanel } from './PersonPanel';
@@ -12,8 +12,17 @@ import { SettingsSheet } from './SettingsSheet';
 type Props = {
   pairId: string;
   userId: string;
+  memberships: Membership[];
+  onSelectBoard: (pairId: string) => void;
+  onOpenBoard: (pairId: string) => void;
+  onDeleted: (pairId: string) => void;
   onSignOut: () => void;
 };
+
+function myTurn(offer: Offer, meId: string) {
+  if (offer.awaiting_id) return offer.awaiting_id === meId;
+  return offer.proposer_id !== meId;
+}
 
 function GearIcon() {
   return (
@@ -30,7 +39,7 @@ function GearIcon() {
   );
 }
 
-export function Board({ pairId, userId, onSignOut }: Props) {
+export function Board({ pairId, userId, memberships, onSelectBoard, onOpenBoard, onDeleted, onSignOut }: Props) {
   const board = useBoard(pairId);
   if (board.loading && !board.data) {
     return (
@@ -46,17 +55,37 @@ export function Board({ pairId, userId, onSignOut }: Props) {
       </main>
     );
   }
-  return <BoardReady userId={userId} onSignOut={onSignOut} data={board.data} reload={board.reload} setData={board.setData} />;
+  return (
+    <BoardReady
+      userId={userId}
+      memberships={memberships}
+      onSelectBoard={onSelectBoard}
+      onOpenBoard={onOpenBoard}
+      onDeleted={onDeleted}
+      onSignOut={onSignOut}
+      data={board.data}
+      reload={board.reload}
+      setData={board.setData}
+    />
+  );
 }
 
 function BoardReady({
   userId,
+  memberships,
+  onSelectBoard,
+  onOpenBoard,
+  onDeleted,
   onSignOut,
   data,
   reload,
   setData,
 }: {
   userId: string;
+  memberships: Membership[];
+  onSelectBoard: (pairId: string) => void;
+  onOpenBoard: (pairId: string) => void;
+  onDeleted: (pairId: string) => void;
   onSignOut: () => void;
   data: BoardData;
   reload: () => Promise<void>;
@@ -70,7 +99,7 @@ function BoardReady({
   const [busyTrackId, setBusyTrackId] = useState<string | null>(null);
 
   const me = data.participants.find((person) => person.user_id === userId);
-  const other = data.participants.find((person) => person.user_id !== userId) ?? null;
+  const others = data.participants.filter((person) => person.user_id !== userId);
   if (!me) {
     return (
       <main className="shell">
@@ -79,11 +108,10 @@ function BoardReady({
     );
   }
 
-  const incoming = data.offers.filter((offer) => offer.awaiting_id === me.id);
-  const waiting = data.offers.filter((offer) => offer.awaiting_id !== me.id);
+  const incoming = data.offers.filter((offer) => myTurn(offer, me.id));
+  const waiting = data.offers.filter((offer) => !myTurn(offer, me.id));
   const visibleTracks = data.tracks.filter((track) => track.starts_on <= day);
   const myTracks = visibleTracks.filter((track) => track.owner_id === me.id);
-  const theirTracks = other ? visibleTracks.filter((track) => track.owner_id === other.id) : [];
 
   function nameFor(participantId: string) {
     return data.participants.find((person) => person.id === participantId)?.display_name ?? 'Them';
@@ -130,7 +158,7 @@ function BoardReady({
   async function submitDraft(draft: TrackDraft) {
     if (!modal) return;
     if (modal.mode === 'create') {
-      await runOffer(() => proposeTrack(draft));
+      await runOffer(() => proposeTrack(data.pair.id, draft));
       return;
     }
     await runOffer(() =>
@@ -142,9 +170,29 @@ function BoardReady({
     <main className="shell">
       <header className="topbar">
         <h1 className="brand">Habits</h1>
-        <button type="button" className="icon-button" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
-          <GearIcon />
-        </button>
+        <div className="topbar-actions">
+          {memberships.length > 1 ? (
+            <label className="board-picker">
+              <span className="sr-only">Board</span>
+              <select
+                aria-label="Board"
+                value={data.pair.id}
+                onChange={(event) => onSelectBoard(event.target.value)}
+              >
+                {memberships.map((membership) => (
+                  <option key={membership.pair.id} value={membership.pair.id}>
+                    {membership.pair.title || 'Board'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="board-title">{data.pair.title || 'Board'}</p>
+          )}
+          <button type="button" className="icon-button" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+            <GearIcon />
+          </button>
+        </div>
       </header>
 
       {actionError ? <p className="error">{actionError}</p> : null}
@@ -159,7 +207,7 @@ function BoardReady({
               busy={busy}
               title={
                 offer.proposer_id === me.id
-                  ? `${other?.display_name ?? 'They'} countered`
+                  ? `${offer.countered_by ? nameFor(offer.countered_by) : 'Someone'} countered`
                   : `${nameFor(offer.proposer_id)} proposed`
               }
               onAccept={() => void runOffer(() => respondToOffer(offer.id, 'accept'))}
@@ -173,7 +221,7 @@ function BoardReady({
               offer={offer}
               waiting
               busy={busy}
-              title={`Waiting on ${nameFor(offer.awaiting_id)}`}
+              title={offer.awaiting_id ? `Waiting on ${nameFor(offer.awaiting_id)}` : 'Waiting on the others'}
               onWithdraw={
                 offer.proposer_id === me.id
                   ? () => void runOffer(() => respondToOffer(offer.id, 'withdraw'))
@@ -197,30 +245,35 @@ function BoardReady({
         busyTrackId={busyTrackId}
         onToggle={(track, checked) => void toggle(track, checked)}
         onAdd={() => setModal({ mode: 'create' })}
-        addDisabled={!other}
+        addDisabled={others.length === 0}
       />
-      {!other ? <p className="help">The other person has to join before you can add something.</p> : null}
+      {others.length === 0 ? (
+        <p className="help">Someone else has to join before you can add something.</p>
+      ) : null}
 
-      {other ? (
-        <PersonPanel
-          person={other}
-          tracks={theirTracks}
-          checks={data.checks}
-          allTracks={data.tracks}
-          day={day}
-          phase={phase}
-          timeZone={data.pair.timezone}
-          goal={data.pair.goal}
-          editable={false}
-          busyTrackId={null}
-          onToggle={() => undefined}
-        />
-      ) : (
-        <section className="panel" aria-label="Waiting for the other person">
-          <h2>Other person</h2>
+      {others.length === 0 ? (
+        <section className="panel" aria-label="Waiting for someone to join">
+          <h2>Other people</h2>
           <p className="empty">Share this code so they can join.</p>
           <p className="code">{data.pair.invite_code}</p>
         </section>
+      ) : (
+        others.map((person) => (
+          <PersonPanel
+            key={person.id}
+            person={person}
+            tracks={visibleTracks.filter((track) => track.owner_id === person.id)}
+            checks={data.checks}
+            allTracks={data.tracks}
+            day={day}
+            phase={phase}
+            timeZone={data.pair.timezone}
+            goal={data.pair.goal}
+            editable={false}
+            busyTrackId={null}
+            onToggle={() => undefined}
+          />
+        ))
       )}
 
       {modal ? (
@@ -243,11 +296,28 @@ function BoardReady({
       {settingsOpen ? (
         <SettingsSheet
           pair={data.pair}
+          participants={data.participants}
+          memberships={memberships}
+          userId={userId}
+          isCreator={me.seat === 1}
           onClose={() => setSettingsOpen(false)}
           onSignOut={onSignOut}
+          onSelectBoard={(id) => {
+            setSettingsOpen(false);
+            onSelectBoard(id);
+          }}
+          onOpenBoard={(id) => {
+            setSettingsOpen(false);
+            onOpenBoard(id);
+          }}
+          onDeleted={() => {
+            setSettingsOpen(false);
+            onDeleted(data.pair.id);
+          }}
           onUpdate={async (patch) => {
             const { error } = await supabase.from('pairs').update(patch).eq('id', data.pair.id);
             if (error) throw error;
+            await reload();
           }}
         />
       ) : null}

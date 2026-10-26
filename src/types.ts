@@ -4,9 +4,15 @@ export type Pair = {
   id: string;
   goal: number;
   notes: string;
+  title: string;
   timezone: string;
   invite_code: string;
   created_at: string;
+};
+
+export type Membership = {
+  participant: Participant;
+  pair: Pair;
 };
 
 export type Participant = {
@@ -23,7 +29,8 @@ export type Offer = {
   id: string;
   pair_id: string;
   proposer_id: string;
-  awaiting_id: string;
+  awaiting_id: string | null;
+  countered_by: string | null;
   name: string;
   kind: Kind;
   gain: number;
