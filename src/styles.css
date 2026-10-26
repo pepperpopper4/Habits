@@ -10,6 +10,8 @@
   --accent: #242424;
   --accent-text: #f6f6f4;
   --danger: #7d3b34;
+  --kept: #1a7f37;
+  --lost: #cf222e;
   --shadow: 0 16px 40px rgba(28, 28, 28, 0.08);
   --radius: 18px;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -170,7 +172,7 @@ h2 {
 
 .panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -187,8 +189,40 @@ h2 {
 }
 
 .score-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   margin: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.today-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.today-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.day-net {
+  font-weight: 650;
+}
+
+.day-net.kept {
+  color: color-mix(in srgb, var(--kept) calc(var(--level) * 100%), #fff);
+}
+
+.day-net.lost {
+  color: color-mix(in srgb, var(--lost) calc(var(--level) * 100%), #fff);
+}
+
+.day-net.flat,
+.day-net.empty {
+  color: var(--muted);
 }
 
 .score {
@@ -560,8 +594,6 @@ textarea {
 }
 
 .history-sheet {
-  --kept: #1a7f37;
-  --lost: #cf222e;
   --cell: 14px;
   --gap: 3px;
   overflow: hidden;

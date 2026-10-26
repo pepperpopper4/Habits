@@ -57,6 +57,23 @@ export function trackShare(track: Track, tracks: Track[], day: string, scoring: 
   return { gain: track.gain * scale, loss: track.loss * scale };
 }
 
+export function settledScore(
+  tracks: Track[],
+  checks: Check[],
+  ownerId: string,
+  today: string,
+  scoring: Scoring = rawScoring,
+): number {
+  return scoreParticipant(tracks, checks, ownerId, today, scoring) - pointsForDay(tracks, checks, ownerId, today, scoring).score;
+}
+
+export function formatChange(value: number): string {
+  const text = formatPoints(value);
+  if (text === '0') return text;
+  if (text.startsWith('−')) return text;
+  return `+${text}`;
+}
+
 export function scoreParticipant(
   tracks: Track[],
   checks: Check[],

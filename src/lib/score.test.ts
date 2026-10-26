@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Check, Track } from '../types';
-import { formatPoints, scoreParticipant } from './score';
+import { formatChange, formatPoints, pointsForDay, scoreParticipant, settledScore } from './score';
 
 const habit: Track = {
   id: 'habit',
@@ -51,12 +51,27 @@ describe('scoreParticipant', () => {
   });
 });
 
+describe('settledScore', () => {
+  it('keeps today out of the overall total until the day changes', () => {
+    const checks = [check('habit', '2026-10-26')];
+    expect(pointsForDay([habit], checks, 'alex', '2026-10-26').score).toBe(2);
+    expect(settledScore([habit], checks, 'alex', '2026-10-26')).toBe(-2);
+    expect(scoreParticipant([habit], checks, 'alex', '2026-10-26')).toBe(0);
+  });
+});
+
 describe('formatPoints', () => {
   it('uses a minus sign for a negative score', () => {
     expect(formatPoints(-3)).toBe('−3');
     expect(formatPoints(4)).toBe('4');
     expect(formatPoints(2.5)).toBe('2.5');
     expect(formatPoints(-1.26)).toBe('−1.3');
+  });
+
+  it('marks a daily gain with a plus', () => {
+    expect(formatChange(3)).toBe('+3');
+    expect(formatChange(-2)).toBe('−2');
+    expect(formatChange(0)).toBe('0');
   });
 });
 

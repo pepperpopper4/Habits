@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { DayPhase } from '../lib/useDayColumn';
 import { formatDayLabel } from '../lib/dates';
-import { formatPoints, scoreParticipant, trackShare, type Scoring } from '../lib/score';
+import { historyKind, historyLevel } from '../lib/history';
+import { formatChange, formatPoints, pointsForDay, settledScore, trackShare, type Scoring } from '../lib/score';
 import type { Check, Participant, Track } from '../types';
 import { HistoryModal } from './HistoryModal';
 import { ProgressBar } from './ProgressBar';
@@ -40,7 +41,10 @@ export function PersonPanel({
   onAdd,
   addDisabled = false,
 }: Props) {
-  const score = scoreParticipant(allTracks, checks, person.id, day, scoring);
+  const todayPoints = pointsForDay(allTracks, checks, person.id, day, scoring);
+  const settled = settledScore(allTracks, checks, person.id, day, scoring);
+  const tone = historyKind({ day, ...todayPoints });
+  const level = historyLevel({ day, ...todayPoints });
   const columnClass = phase === 'shown' ? 'day-column' : `day-column ${phase}`;
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -53,13 +57,25 @@ export function PersonPanel({
           </button>
         </h2>
         <p className="score-line">
-          <span className="score" data-score={score}>
-            {formatPoints(score)}
+          <span className="today-line">
+            <span className="today-label">Today</span>
+            <span
+              className={`day-net ${tone}`}
+              style={{ ['--level' as string]: level }}
+              data-today={todayPoints.score}
+            >
+              {formatChange(todayPoints.score)}
+            </span>
           </span>
-          <span className="goal"> / {goal}</span>
+          <span>
+            <span className="score" data-score={settled}>
+              {formatPoints(settled)}
+            </span>
+            <span className="goal"> / {goal}</span>
+          </span>
         </p>
       </div>
-      <ProgressBar score={score} goal={goal} />
+      <ProgressBar score={settled} goal={goal} />
       <div className="day-window">
         <div key={day} className={columnClass} data-day={day} data-phase={phase}>
           <p className="day-label">{formatDayLabel(day, timeZone)}</p>
