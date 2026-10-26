@@ -69,6 +69,20 @@ export async function deletePair(pairId: string) {
   if (error) throw error;
 }
 
+export async function addTrack(
+  pairId: string,
+  input: { name: string; kind: Kind; gain: number; loss: number },
+) {
+  const { error } = await supabase.rpc('add_track', {
+    p_pair_id: pairId,
+    p_name: input.name,
+    p_kind: input.kind,
+    p_gain: input.gain,
+    p_loss: input.loss,
+  });
+  if (error) throw error;
+}
+
 export async function proposeTrack(
   pairId: string,
   input: { name: string; kind: Kind; gain: number; loss: number },

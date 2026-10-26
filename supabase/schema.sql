@@ -12,6 +12,9 @@ create table if not exists public.pairs (
   goal integer not null default 100 check (goal between 0 and 100000),
   notes text not null default '' check (char_length(notes) <= 4000),
   title text not null default 'Board',
+  scoring text not null default 'raw' check (scoring in ('raw', 'capped')),
+  daily_max integer not null default 10 check (daily_max between 1 and 1000),
+  prize text not null default '' check (char_length(prize) <= 80),
   timezone text not null,
   invite_code text not null unique check (invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$'),
   created_at timestamptz not null default now()
@@ -64,6 +67,32 @@ create table if not exists public.checks (
 );
 
 alter table public.pairs add column if not exists title text not null default 'Board';
+alter table public.pairs add column if not exists scoring text not null default 'raw';
+alter table public.pairs add column if not exists daily_max integer not null default 10;
+alter table public.pairs add column if not exists prize text not null default '';
+
+do $pair_scoring$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pairs_scoring_check' and conrelid = 'public.pairs'::regclass
+  ) then
+    alter table public.pairs add constraint pairs_scoring_check check (scoring in ('raw', 'capped'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pairs_daily_max_check' and conrelid = 'public.pairs'::regclass
+  ) then
+    alter table public.pairs add constraint pairs_daily_max_check check (daily_max between 1 and 1000);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pairs_prize_check' and conrelid = 'public.pairs'::regclass
+  ) then
+    alter table public.pairs add constraint pairs_prize_check check (char_length(prize) <= 80);
+  end if;
+end
+$pair_scoring$;
 
 do $participants_migrate$
 declare
@@ -224,6 +253,19 @@ begin
     raise exception 'board name must be 1 to 40 characters';
   end if;
   new.title := btrim(new.title);
+  if new.scoring is null or new.scoring not in ('raw', 'capped') then
+    raise exception 'pick raw points or a daily maximum';
+  end if;
+  if new.daily_max is null or new.daily_max < 1 or new.daily_max > 1000 then
+    raise exception 'daily maximum must be from 1 to 1000';
+  end if;
+  if new.prize is null then
+    new.prize := '';
+  end if;
+  new.prize := btrim(new.prize);
+  if char_length(new.prize) > 80 then
+    raise exception 'prize must be 80 characters or fewer';
+  end if;
   if new.timezone is null or char_length(btrim(new.timezone)) = 0 then
     raise exception 'timezone is required';
   end if;
@@ -514,6 +556,53 @@ begin
 end;
 $$;
 
+create or replace function public.add_track(
+  p_pair_id uuid,
+  p_name text,
+  p_kind text,
+  p_gain integer,
+  p_loss integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me public.participants;
+  created public.tracks;
+  clean_name text := btrim(p_name);
+  today date;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select * into me
+  from public.participants
+  where user_id = auth.uid() and pair_id = p_pair_id;
+  if not found then
+    raise exception 'you are not on this board';
+  end if;
+  if char_length(clean_name) < 1 or char_length(clean_name) > 60 then
+    raise exception 'name must be 1 to 60 characters';
+  end if;
+  if p_kind not in ('habit', 'vice') then
+    raise exception 'pick a habit or a vice';
+  end if;
+  if p_gain is null or p_loss is null or p_gain < 1 or p_loss < 1 or p_gain > 99 or p_loss > 99 then
+    raise exception 'points must be from 1 to 99';
+  end if;
+  today := public.pair_today(p_pair_id);
+  if today is null then
+    raise exception 'you are not on this board';
+  end if;
+  insert into public.tracks (pair_id, owner_id, name, kind, gain, loss, starts_on)
+  values (p_pair_id, me.id, clean_name, p_kind, p_gain, p_loss, today)
+  returning * into created;
+  return to_jsonb(created);
+end;
+$$;
+
 create or replace function public.delete_pair(p_pair_id uuid)
 returns void
 language plpgsql
@@ -551,6 +640,7 @@ revoke all on function public.join_pair(text, text) from public, anon, authentic
 revoke all on function public.propose_track(uuid, text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.propose_track(text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.respond_offer(uuid, text, integer, integer) from public, anon, authenticated;
+revoke all on function public.add_track(uuid, text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.delete_pair(uuid) from public, anon, authenticated;
 
 grant execute on function public.is_pair_member(uuid) to authenticated;
@@ -563,6 +653,7 @@ grant execute on function public.join_pair(text, text) to authenticated;
 grant execute on function public.propose_track(uuid, text, text, integer, integer) to authenticated;
 grant execute on function public.propose_track(text, text, integer, integer) to authenticated;
 grant execute on function public.respond_offer(uuid, text, integer, integer) to authenticated;
+grant execute on function public.add_track(uuid, text, text, integer, integer) to authenticated;
 grant execute on function public.delete_pair(uuid) to authenticated;
 
 alter table public.pairs enable row level security;

@@ -79,7 +79,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
             </button>
           </div>
           <p className="help">
-            A check marks a habit done or a vice avoided, and scores the gain. An empty box scores the loss.
+            A check marks a habit done or a vice avoided, and scores the gain. An empty box scores the loss. It is added to your list right away.
           </p>
           <label className="field">
             <span>Name</span>
@@ -142,7 +142,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
               Cancel
             </button>
             <button type="submit" className="button primary" disabled={busy}>
-              {locked ? 'Send counter' : 'Send offer'}
+              {locked ? 'Send counter' : 'Add it'}
             </button>
           </div>
         </form>

@@ -34,8 +34,8 @@ GitHub Actions builds the site from the `main` branch. The Supabase URL and anon
 
 Someone creates a board and gets a six-character invite code. Other people create accounts and join with that code. The same account can create or join more boards and switch between them.
 
-Each person checks their own list. Everyone else's lists are visible and cannot be edited. New habits and vices are offers. With one other person, that person accepts the point ratio, counters the numbers, or declines. With more people, any of them can. The person who proposed it can withdraw while they are waiting.
+Each person checks their own list. Everyone else's lists are visible and cannot be edited. New habits and vices go on your list as soon as you add them.
 
-Settings holds the shared point goal, the timezone that decides midnight, the board name, the people on the board, and one notes box. Leaving the notes box saves it. Wipe clears it for everyone on the board. It is a shared note, not a message thread. The person who created the board can delete it.
+Settings holds the shared point goal, how a day is scored, the prize for reaching that goal, the timezone that decides midnight, the board name, the people on the board, and one notes box. Raw scoring uses each item's numbers as points. A daily maximum makes a finished day worth the same number of points no matter how many items someone has. The prize is shown at the top of that board. Leaving the notes box saves it. Wipe clears it for everyone on the board. It is a shared note, not a message thread. The person who created the board can delete it.
 
 Keep the anon key in `.env.local`. Do not put the service role key in this app.

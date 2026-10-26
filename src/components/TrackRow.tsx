@@ -1,7 +1,10 @@
+import { formatPoints } from '../lib/score';
 import type { Track } from '../types';
 
 type Props = {
   track: Track;
+  gain: number;
+  loss: number;
   checked: boolean;
   editable: boolean;
   busy: boolean;
@@ -23,7 +26,7 @@ function CheckMark() {
   );
 }
 
-export function TrackRow({ track, checked, editable, busy, onToggle }: Props) {
+export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle }: Props) {
   const kindLabel = track.kind === 'habit' ? 'Habit' : 'Vice';
   const stateLabel = checked ? 'checked' : 'not checked';
   const box = (
@@ -38,7 +41,7 @@ export function TrackRow({ track, checked, editable, busy, onToggle }: Props) {
         <span className="track-name">{track.name}</span>
         <span className="track-meta">
           {kindLabel}
-          <span aria-hidden="true"> · </span>+{track.gain} / −{track.loss}
+          <span aria-hidden="true"> · </span>+{formatPoints(gain)} / −{formatPoints(loss)}
         </span>
       </div>
       {editable ? (

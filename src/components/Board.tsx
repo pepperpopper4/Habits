@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { messageFrom, proposeTrack, respondToOffer } from '../lib/api';
+import { addTrack, messageFrom } from '../lib/api';
+import { scoringFrom } from '../lib/score';
 import { supabase } from '../lib/supabase';
 import { useBoard } from '../lib/useBoard';
 import { useDayColumn } from '../lib/useDayColumn';
-import type { BoardData, Membership, Offer, Track } from '../types';
+import type { BoardData, Membership, Track } from '../types';
 import { AddTrackModal, type TrackDraft } from './AddTrackModal';
-import { OfferCard } from './OfferCard';
 import { PersonPanel } from './PersonPanel';
 import { SettingsSheet } from './SettingsSheet';
 
@@ -18,11 +18,6 @@ type Props = {
   onDeleted: (pairId: string) => void;
   onSignOut: () => void;
 };
-
-function myTurn(offer: Offer, meId: string) {
-  if (offer.awaiting_id) return offer.awaiting_id === meId;
-  return offer.proposer_id !== meId;
-}
 
 function GearIcon() {
   return (
@@ -93,10 +88,11 @@ function BoardReady({
 }) {
   const { day, phase } = useDayColumn(data.pair.timezone);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modal, setModal] = useState<null | { mode: 'create' } | { mode: 'counter'; offer: Offer }>(null);
+  const [adding, setAdding] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyTrackId, setBusyTrackId] = useState<string | null>(null);
+  const scoring = scoringFrom(data.pair);
 
   const me = data.participants.find((person) => person.user_id === userId);
   const others = data.participants.filter((person) => person.user_id !== userId);
@@ -108,14 +104,8 @@ function BoardReady({
     );
   }
 
-  const incoming = data.offers.filter((offer) => myTurn(offer, me.id));
-  const waiting = data.offers.filter((offer) => !myTurn(offer, me.id));
   const visibleTracks = data.tracks.filter((track) => track.starts_on <= day);
   const myTracks = visibleTracks.filter((track) => track.owner_id === me.id);
-
-  function nameFor(participantId: string) {
-    return data.participants.find((person) => person.id === participantId)?.display_name ?? 'Them';
-  }
 
   async function toggle(track: Track, checked: boolean) {
     setActionError(null);
@@ -141,29 +131,18 @@ function BoardReady({
     setBusyTrackId(null);
   }
 
-  async function runOffer(work: () => Promise<void>) {
+  async function submitDraft(draft: TrackDraft) {
     setBusy(true);
     setActionError(null);
     try {
-      await work();
-      setModal(null);
+      await addTrack(data.pair.id, draft);
+      setAdding(false);
       await reload();
     } catch (error) {
       setActionError(messageFrom(error));
     } finally {
       setBusy(false);
     }
-  }
-
-  async function submitDraft(draft: TrackDraft) {
-    if (!modal) return;
-    if (modal.mode === 'create') {
-      await runOffer(() => proposeTrack(data.pair.id, draft));
-      return;
-    }
-    await runOffer(() =>
-      respondToOffer(modal.offer.id, 'counter', { gain: draft.gain, loss: draft.loss }),
-    );
   }
 
   return (
@@ -195,42 +174,14 @@ function BoardReady({
         </div>
       </header>
 
-      {actionError ? <p className="error">{actionError}</p> : null}
-
-      {incoming.length > 0 || waiting.length > 0 ? (
-        <div className="offer-list">
-          {incoming.map((offer) => (
-            <OfferCard
-              key={offer.id}
-              offer={offer}
-              waiting={false}
-              busy={busy}
-              title={
-                offer.proposer_id === me.id
-                  ? `${offer.countered_by ? nameFor(offer.countered_by) : 'Someone'} countered`
-                  : `${nameFor(offer.proposer_id)} proposed`
-              }
-              onAccept={() => void runOffer(() => respondToOffer(offer.id, 'accept'))}
-              onDecline={() => void runOffer(() => respondToOffer(offer.id, 'decline'))}
-              onCounter={() => setModal({ mode: 'counter', offer })}
-            />
-          ))}
-          {waiting.map((offer) => (
-            <OfferCard
-              key={offer.id}
-              offer={offer}
-              waiting
-              busy={busy}
-              title={offer.awaiting_id ? `Waiting on ${nameFor(offer.awaiting_id)}` : 'Waiting on the others'}
-              onWithdraw={
-                offer.proposer_id === me.id
-                  ? () => void runOffer(() => respondToOffer(offer.id, 'withdraw'))
-                  : undefined
-              }
-            />
-          ))}
-        </div>
+      {data.pair.prize?.trim() ? (
+        <p className="prize">
+          <span className="prize-label">Prize</span>
+          {data.pair.prize}
+        </p>
       ) : null}
+
+      {actionError ? <p className="error">{actionError}</p> : null}
 
       <PersonPanel
         person={me}
@@ -241,15 +192,12 @@ function BoardReady({
         phase={phase}
         timeZone={data.pair.timezone}
         goal={data.pair.goal}
+        scoring={scoring}
         editable
         busyTrackId={busyTrackId}
         onToggle={(track, checked) => void toggle(track, checked)}
-        onAdd={() => setModal({ mode: 'create' })}
-        addDisabled={others.length === 0}
+        onAdd={() => setAdding(true)}
       />
-      {others.length === 0 ? (
-        <p className="help">Someone else has to join before you can add something.</p>
-      ) : null}
 
       {others.length === 0 ? (
         <section className="panel" aria-label="Waiting for someone to join">
@@ -268,26 +216,23 @@ function BoardReady({
             day={day}
             phase={phase}
             timeZone={data.pair.timezone}
-            goal={data.pair.goal}
-            editable={false}
+          goal={data.pair.goal}
+          scoring={scoring}
+          editable={false}
             busyTrackId={null}
             onToggle={() => undefined}
           />
         ))
       )}
 
-      {modal ? (
+      {adding ? (
         <AddTrackModal
-          mode={modal.mode}
-          initial={
-            modal.mode === 'counter'
-              ? { name: modal.offer.name, kind: modal.offer.kind, gain: modal.offer.gain, loss: modal.offer.loss }
-              : { name: '', kind: 'habit', gain: 1, loss: 1 }
-          }
+          mode="create"
+          initial={{ name: '', kind: 'habit', gain: 1, loss: 1 }}
           busy={busy}
           error={actionError}
           onClose={() => {
-            if (!busy) setModal(null);
+            if (!busy) setAdding(false);
           }}
           onSubmit={(draft) => void submitDraft(draft)}
         />

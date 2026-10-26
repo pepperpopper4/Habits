@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPair, deletePair, joinPair, messageFrom } from '../lib/api';
-import type { Membership, Pair, Participant } from '../types';
+import type { Membership, Pair, Participant, ScoringMode } from '../types';
 
 const CODE_ALPHABET = /[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g;
 
@@ -9,6 +9,9 @@ type PairPatch = {
   notes?: string;
   timezone?: string;
   title?: string;
+  scoring?: ScoringMode;
+  daily_max?: number;
+  prize?: string;
 };
 
 type Props = {
@@ -40,10 +43,14 @@ export function SettingsSheet({
 }: Props) {
   const titleId = useId();
   const notesFocus = useRef(false);
+  const prizeFocus = useRef(false);
   const [goal, setGoal] = useState(String(pair.goal));
   const [zone, setZone] = useState(pair.timezone);
   const [boardName, setBoardName] = useState(pair.title || 'Board');
   const [notes, setNotes] = useState(pair.notes);
+  const [scoringMode, setScoringMode] = useState<ScoringMode>(pair.scoring === 'capped' ? 'capped' : 'raw');
+  const [dailyMax, setDailyMax] = useState(String(pair.daily_max || 10));
+  const [prize, setPrize] = useState(pair.prize || '');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,8 +69,11 @@ export function SettingsSheet({
     setGoal(String(pair.goal));
     setZone(pair.timezone);
     setBoardName(pair.title || 'Board');
+    setScoringMode(pair.scoring === 'capped' ? 'capped' : 'raw');
+    setDailyMax(String(pair.daily_max || 10));
+    if (!prizeFocus.current) setPrize(pair.prize || '');
     if (!notesFocus.current) setNotes(pair.notes);
-  }, [pair.goal, pair.timezone, pair.notes, pair.title]);
+  }, [pair.goal, pair.timezone, pair.notes, pair.title, pair.scoring, pair.daily_max, pair.prize]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -112,6 +122,63 @@ export function SettingsSheet({
     } catch (err) {
       setError(messageFrom(err));
       setZone(pair.timezone);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveScoring(next: ScoringMode) {
+    setScoringMode(next);
+    if (next === (pair.scoring === 'capped' ? 'capped' : 'raw')) return;
+    setBusy(true);
+    try {
+      await onUpdate({ scoring: next });
+      setError(null);
+    } catch (err) {
+      setError(messageFrom(err));
+      setScoringMode(pair.scoring === 'capped' ? 'capped' : 'raw');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDailyMax() {
+    const value = Number(dailyMax);
+    if (!Number.isInteger(value) || value < 1 || value > 1000) {
+      setError('Daily maximum must be a whole number from 1 to 1000.');
+      setDailyMax(String(pair.daily_max || 10));
+      return;
+    }
+    if (value === (pair.daily_max || 10)) return;
+    setBusy(true);
+    try {
+      await onUpdate({ daily_max: value });
+      setError(null);
+    } catch (err) {
+      setError(messageFrom(err));
+      setDailyMax(String(pair.daily_max || 10));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePrize() {
+    prizeFocus.current = false;
+    const value = prize.trim();
+    if (value.length > 80) {
+      setError('Prize must be 80 characters or fewer.');
+      setPrize(pair.prize || '');
+      return;
+    }
+    if (value === (pair.prize || '').trim()) return;
+    setPrize(value);
+    setBusy(true);
+    try {
+      await onUpdate({ prize: value });
+      setError(null);
+    } catch (err) {
+      setError(messageFrom(err));
+      setPrize(pair.prize || '');
     } finally {
       setBusy(false);
     }
@@ -259,6 +326,67 @@ export function SettingsSheet({
             }}
           />
         </label>
+
+        <fieldset className="choice">
+          <legend>Daily scoring</legend>
+          <label className={scoringMode === 'raw' ? 'choice-option on' : 'choice-option'}>
+            <input
+              type="radio"
+              name="scoring"
+              value="raw"
+              checked={scoringMode === 'raw'}
+              onChange={() => void saveScoring('raw')}
+            />
+            Raw points
+          </label>
+          <label className={scoringMode === 'capped' ? 'choice-option on' : 'choice-option'}>
+            <input
+              type="radio"
+              name="scoring"
+              value="capped"
+              checked={scoringMode === 'capped'}
+              onChange={() => void saveScoring('capped')}
+            />
+            Daily maximum
+          </label>
+        </fieldset>
+        {scoringMode === 'capped' ? (
+          <label className="field">
+            <span>Max points in a day</span>
+            <input
+              inputMode="numeric"
+              value={dailyMax}
+              onChange={(event) => setDailyMax(event.target.value)}
+              onBlur={() => void saveDailyMax()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void saveDailyMax();
+                }
+              }}
+            />
+          </label>
+        ) : null}
+        <p className="help">
+          {scoringMode === 'raw'
+            ? 'Each item’s numbers are the points. A longer list can score more in a day.'
+            : 'A finished day is worth this many points. Each item’s numbers decide its share, so a long list and a short list can tie.'}
+        </p>
+
+        <label className="field">
+          <span>Prize</span>
+          <input
+            value={prize}
+            maxLength={80}
+            placeholder="What you get for reaching the goal"
+            onFocus={() => {
+              prizeFocus.current = true;
+            }}
+            onChange={(event) => setPrize(event.target.value)}
+            onBlur={() => void savePrize()}
+          />
+        </label>
+        <p className="help">Shown at the top of this board.</p>
 
         <label className="field">
           <span>Timezone</span>

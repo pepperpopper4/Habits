@@ -1,5 +1,6 @@
 import type { Check, Track } from '../types';
 import { daysFrom } from './dates';
+import { formatPoints, pointsForDay, rawScoring, type Scoring } from './score';
 
 export type DayScore = {
   day: string;
@@ -10,18 +11,14 @@ export type DayScore = {
 
 export type HistoryKind = 'empty' | 'flat' | 'kept' | 'lost';
 
-export function scoreDay(tracks: Track[], checks: Check[], ownerId: string, day: string): DayScore {
-  const checked = new Set(checks.filter((check) => check.day === day).map((check) => check.track_id));
-  let score = 0;
-  let maxGain = 0;
-  let maxLoss = 0;
-  for (const track of tracks) {
-    if (track.owner_id !== ownerId || track.starts_on > day) continue;
-    maxGain += track.gain;
-    maxLoss += track.loss;
-    score += checked.has(track.id) ? track.gain : -track.loss;
-  }
-  return { day, score, maxGain, maxLoss };
+export function scoreDay(
+  tracks: Track[],
+  checks: Check[],
+  ownerId: string,
+  day: string,
+  scoring: Scoring = rawScoring,
+): DayScore {
+  return { day, ...pointsForDay(tracks, checks, ownerId, day, scoring) };
 }
 
 export function historyKind(day: DayScore): HistoryKind {
@@ -42,16 +39,22 @@ export function historyLevel(day: DayScore): number {
 export function historyPhrase(day: DayScore): string {
   const kind = historyKind(day);
   if (kind === 'empty') return 'No items';
-  if (kind === 'kept') return `Kept ${day.score} of ${day.maxGain}`;
-  if (kind === 'lost') return `Lost ${Math.abs(day.score)} of ${day.maxLoss}`;
+  if (kind === 'kept') return `Kept ${formatPoints(day.score)} of ${formatPoints(day.maxGain)}`;
+  if (kind === 'lost') return `Lost ${formatPoints(Math.abs(day.score))} of ${formatPoints(day.maxLoss)}`;
   return 'Even';
 }
 
-export function personHistory(tracks: Track[], checks: Check[], ownerId: string, today: string): DayScore[] {
+export function personHistory(
+  tracks: Track[],
+  checks: Check[],
+  ownerId: string,
+  today: string,
+  scoring: Scoring = rawScoring,
+): DayScore[] {
   const started = tracks.filter((track) => track.owner_id === ownerId && track.starts_on <= today);
   if (started.length === 0) return [];
   const start = started.reduce((earliest, track) => (track.starts_on < earliest ? track.starts_on : earliest), started[0].starts_on);
-  return daysFrom(start, today).map((day) => scoreDay(tracks, checks, ownerId, day));
+  return daysFrom(start, today).map((day) => scoreDay(tracks, checks, ownerId, day, scoring));
 }
 
 function weekdayIndex(isoDate: string): number {

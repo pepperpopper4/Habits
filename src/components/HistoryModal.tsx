@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { formatDayLabel } from '../lib/dates';
 import { historyKind, historyLevel, historyPhrase, historyWeeks, monthLabels, personHistory, type DayScore } from '../lib/history';
+import type { Scoring } from '../lib/score';
 import type { Check, Track } from '../types';
 
 type Props = {
@@ -10,14 +11,18 @@ type Props = {
   ownerId: string;
   today: string;
   timeZone: string;
+  scoring: Scoring;
   onClose: () => void;
 };
 
 const WEEKDAYS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 
-export function HistoryModal({ name, tracks, checks, ownerId, today, timeZone, onClose }: Props) {
+export function HistoryModal({ name, tracks, checks, ownerId, today, timeZone, scoring, onClose }: Props) {
   const titleId = useId();
-  const days = useMemo(() => personHistory(tracks, checks, ownerId, today), [tracks, checks, ownerId, today]);
+  const days = useMemo(
+    () => personHistory(tracks, checks, ownerId, today, scoring),
+    [tracks, checks, ownerId, today, scoring],
+  );
   const weeks = useMemo(() => (days.length === 0 ? [] : historyWeeks(days[0].day, days[days.length - 1].day)), [days]);
   const labels = useMemo(() => monthLabels(weeks), [weeks]);
   const byDay = useMemo(() => new Map(days.map((day) => [day.day, day])), [days]);

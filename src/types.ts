@@ -1,5 +1,7 @@
 export type Kind = 'habit' | 'vice';
 
+export type ScoringMode = 'raw' | 'capped';
+
 export type Pair = {
   id: string;
   goal: number;
@@ -7,6 +9,9 @@ export type Pair = {
   title: string;
   timezone: string;
   invite_code: string;
+  scoring: ScoringMode;
+  daily_max: number;
+  prize: string;
   created_at: string;
 };
 

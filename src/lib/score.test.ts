@@ -55,5 +55,30 @@ describe('formatPoints', () => {
   it('uses a minus sign for a negative score', () => {
     expect(formatPoints(-3)).toBe('−3');
     expect(formatPoints(4)).toBe('4');
+    expect(formatPoints(2.5)).toBe('2.5');
+    expect(formatPoints(-1.26)).toBe('−1.3');
+  });
+});
+
+describe('capped scoring', () => {
+  it('makes a perfect day worth the daily maximum for a short list and a long one', () => {
+    const short = [habit, vice];
+    const long = Array.from({ length: 25 }, (_, index) => ({
+      ...habit,
+      id: `item-${index}`,
+      gain: 1,
+      loss: 1,
+    }));
+    const shortChecks = short.map((track) => check(track.id, '2026-10-24'));
+    const longChecks = long.map((track) => check(track.id, '2026-10-24'));
+    const capped = { mode: 'capped' as const, dailyMax: 10 };
+    expect(scoreParticipant(short, shortChecks, 'alex', '2026-10-24', capped)).toBeCloseTo(10);
+    expect(scoreParticipant(long, longChecks, 'alex', '2026-10-24', capped)).toBeCloseTo(10);
+  });
+
+  it('gives each item a share of the daily maximum', () => {
+    const capped = { mode: 'capped' as const, dailyMax: 10 };
+    const day = scoreParticipant([habit, vice], [check('habit', '2026-10-24')], 'alex', '2026-10-24', capped);
+    expect(day).toBeCloseTo((2 - 4) * (10 / 5));
   });
 });

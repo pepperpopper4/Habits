@@ -113,6 +113,23 @@ button:disabled {
   white-space: nowrap;
 }
 
+.prize {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  font-weight: 650;
+}
+
+.prize-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 550;
+}
+
 h1,
 h2 {
   margin: 0;

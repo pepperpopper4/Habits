@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { DayPhase } from '../lib/useDayColumn';
 import { formatDayLabel } from '../lib/dates';
-import { formatPoints, scoreParticipant } from '../lib/score';
+import { formatPoints, scoreParticipant, trackShare, type Scoring } from '../lib/score';
 import type { Check, Participant, Track } from '../types';
 import { HistoryModal } from './HistoryModal';
 import { ProgressBar } from './ProgressBar';
@@ -16,6 +16,7 @@ type Props = {
   phase: DayPhase;
   timeZone: string;
   goal: number;
+  scoring: Scoring;
   editable: boolean;
   busyTrackId: string | null;
   onToggle: (track: Track, checked: boolean) => void;
@@ -32,13 +33,14 @@ export function PersonPanel({
   phase,
   timeZone,
   goal,
+  scoring,
   editable,
   busyTrackId,
   onToggle,
   onAdd,
   addDisabled = false,
 }: Props) {
-  const score = scoreParticipant(allTracks, checks, person.id, day);
+  const score = scoreParticipant(allTracks, checks, person.id, day, scoring);
   const columnClass = phase === 'shown' ? 'day-column' : `day-column ${phase}`;
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -65,16 +67,21 @@ export function PersonPanel({
             <p className="empty">{editable ? 'Nothing on your list yet.' : 'Nothing on this list yet.'}</p>
           ) : (
             <div className="track-list">
-              {tracks.map((track) => (
+              {tracks.map((track) => {
+                const share = trackShare(track, allTracks, day, scoring);
+                return (
                 <TrackRow
                   key={track.id}
                   track={track}
+                  gain={share.gain}
+                  loss={share.loss}
                   checked={checks.some((check) => check.track_id === track.id && check.day === day)}
                   editable={editable && phase === 'shown'}
                   busy={busyTrackId === track.id}
                   onToggle={onToggle}
                 />
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -92,6 +99,7 @@ export function PersonPanel({
           ownerId={person.id}
           today={day}
           timeZone={timeZone}
+          scoring={scoring}
           onClose={() => setHistoryOpen(false)}
         />
       ) : null}
