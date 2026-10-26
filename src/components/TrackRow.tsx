@@ -1,3 +1,4 @@
+import { scheduleLabel } from '../lib/dates';
 import { formatPoints } from '../lib/score';
 import type { Track } from '../types';
 
@@ -9,6 +10,7 @@ type Props = {
   editable: boolean;
   busy: boolean;
   onToggle: (track: Track, checked: boolean) => void;
+  onEdit?: (track: Track) => void;
 };
 
 function CheckMark() {
@@ -26,9 +28,10 @@ function CheckMark() {
   );
 }
 
-export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle }: Props) {
+export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle, onEdit }: Props) {
   const kindLabel = track.kind === 'habit' ? 'Habit' : 'Vice';
   const stateLabel = checked ? 'checked' : 'not checked';
+  const days = scheduleLabel(track.weekdays);
   const box = (
     <span className="check-box">
       {checked ? <CheckMark /> : null}
@@ -37,13 +40,35 @@ export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle 
 
   return (
     <div className="track">
-      <div className="track-copy">
-        <span className="track-name">{track.name}</span>
-        <span className="track-meta">
-          {kindLabel}
-          <span aria-hidden="true"> · </span>+{formatPoints(gain)} / −{formatPoints(loss)}
-        </span>
-      </div>
+      {onEdit ? (
+        <button type="button" className="track-text" onClick={() => onEdit(track)}>
+          <span className="track-name">{track.name}</span>
+          <span className="track-meta">
+            {kindLabel}
+            <span aria-hidden="true"> · </span>+{formatPoints(gain)} / −{formatPoints(loss)}
+            {days ? (
+              <>
+                <span aria-hidden="true"> · </span>
+                {days}
+              </>
+            ) : null}
+          </span>
+        </button>
+      ) : (
+        <div className="track-copy">
+          <span className="track-name">{track.name}</span>
+          <span className="track-meta">
+            {kindLabel}
+            <span aria-hidden="true"> · </span>+{formatPoints(gain)} / −{formatPoints(loss)}
+            {days ? (
+              <>
+                <span aria-hidden="true"> · </span>
+                {days}
+              </>
+            ) : null}
+          </span>
+        </div>
+      )}
       {editable ? (
         <button
           type="button"

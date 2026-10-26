@@ -33,7 +33,7 @@ export async function fetchBoard(pairId: string): Promise<BoardData> {
   return {
     pair: pair.data,
     participants: participants.data,
-    tracks: tracks.data,
+    tracks: tracks.data.map((track) => ({ ...track, weekdays: track.weekdays ?? 127 })),
     offers: offers.data,
     checks: checks.data,
   };
@@ -71,7 +71,7 @@ export async function deletePair(pairId: string) {
 
 export async function addTrack(
   pairId: string,
-  input: { name: string; kind: Kind; gain: number; loss: number },
+  input: { name: string; kind: Kind; gain: number; loss: number; weekdays: number },
 ) {
   const { error } = await supabase.rpc('add_track', {
     p_pair_id: pairId,
@@ -79,6 +79,22 @@ export async function addTrack(
     p_kind: input.kind,
     p_gain: input.gain,
     p_loss: input.loss,
+    p_weekdays: input.weekdays,
+  });
+  if (error) throw error;
+}
+
+export async function updateTrack(
+  trackId: string,
+  input: { name: string; kind: Kind; gain: number; loss: number; weekdays: number },
+) {
+  const { error } = await supabase.rpc('update_track', {
+    p_track_id: trackId,
+    p_name: input.name,
+    p_kind: input.kind,
+    p_gain: input.gain,
+    p_loss: input.loss,
+    p_weekdays: input.weekdays,
   });
   if (error) throw error;
 }

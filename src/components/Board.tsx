@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { addTrack, messageFrom } from '../lib/api';
-import { scoringFrom } from '../lib/score';
+import { addTrack, messageFrom, updateTrack } from '../lib/api';
+import { scoringFrom, showsOn } from '../lib/score';
 import { supabase } from '../lib/supabase';
 import { useBoard } from '../lib/useBoard';
 import { useDayColumn } from '../lib/useDayColumn';
@@ -89,6 +89,7 @@ function BoardReady({
   const { day, phase } = useDayColumn(data.pair.timezone);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Track | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyTrackId, setBusyTrackId] = useState<string | null>(null);
@@ -104,7 +105,7 @@ function BoardReady({
     );
   }
 
-  const visibleTracks = data.tracks.filter((track) => track.starts_on <= day);
+  const visibleTracks = data.tracks.filter((track) => showsOn(track, day));
   const myTracks = visibleTracks.filter((track) => track.owner_id === me.id);
 
   async function toggle(track: Track, checked: boolean) {
@@ -137,6 +138,21 @@ function BoardReady({
     try {
       await addTrack(data.pair.id, draft);
       setAdding(false);
+      await reload();
+    } catch (error) {
+      setActionError(messageFrom(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEdit(draft: TrackDraft) {
+    if (!editing) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await updateTrack(editing.id, draft);
+      setEditing(null);
       await reload();
     } catch (error) {
       setActionError(messageFrom(error));
@@ -196,7 +212,14 @@ function BoardReady({
         editable
         busyTrackId={busyTrackId}
         onToggle={(track, checked) => void toggle(track, checked)}
-        onAdd={() => setAdding(true)}
+        onAdd={() => {
+          setActionError(null);
+          setAdding(true);
+        }}
+        onEdit={(track) => {
+          setActionError(null);
+          setEditing(track);
+        }}
       />
 
       {others.length === 0 ? (
@@ -228,13 +251,32 @@ function BoardReady({
       {adding ? (
         <AddTrackModal
           mode="create"
-          initial={{ name: '', kind: 'habit', gain: 1, loss: 1 }}
+          initial={{ name: '', kind: 'habit', gain: 1, loss: 1, weekdays: 127 }}
           busy={busy}
           error={actionError}
           onClose={() => {
             if (!busy) setAdding(false);
           }}
           onSubmit={(draft) => void submitDraft(draft)}
+        />
+      ) : null}
+
+      {editing ? (
+        <AddTrackModal
+          mode="edit"
+          initial={{
+            name: editing.name,
+            kind: editing.kind,
+            gain: editing.gain,
+            loss: editing.loss,
+            weekdays: editing.weekdays || 127,
+          }}
+          busy={busy}
+          error={actionError}
+          onClose={() => {
+            if (!busy) setEditing(null);
+          }}
+          onSubmit={(draft) => void saveEdit(draft)}
         />
       ) : null}
 

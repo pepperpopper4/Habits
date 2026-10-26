@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { DayPhase } from '../lib/useDayColumn';
-import { formatDayLabel } from '../lib/dates';
+import { formatDayLabel, isScheduled, scheduleLabel } from '../lib/dates';
 import { historyKind, historyLevel } from '../lib/history';
 import { formatChange, formatPoints, pointsForDay, settledScore, trackShare, type Scoring } from '../lib/score';
 import type { Check, Participant, Track } from '../types';
@@ -22,6 +22,7 @@ type Props = {
   busyTrackId: string | null;
   onToggle: (track: Track, checked: boolean) => void;
   onAdd?: () => void;
+  onEdit?: (track: Track) => void;
   addDisabled?: boolean;
 };
 
@@ -39,8 +40,12 @@ export function PersonPanel({
   busyTrackId,
   onToggle,
   onAdd,
+  onEdit,
   addDisabled = false,
 }: Props) {
+  const resting = allTracks.filter(
+    (track) => track.owner_id === person.id && track.starts_on <= day && !isScheduled(track.weekdays, day),
+  );
   const todayPoints = pointsForDay(allTracks, checks, person.id, day, scoring);
   const settled = settledScore(allTracks, checks, person.id, day, scoring);
   const tone = historyKind({ day, ...todayPoints });
@@ -95,6 +100,7 @@ export function PersonPanel({
                   editable={editable && phase === 'shown'}
                   busy={busyTrackId === track.id}
                   onToggle={onToggle}
+                  onEdit={onEdit}
                 />
                 );
               })}
@@ -102,6 +108,17 @@ export function PersonPanel({
           )}
         </div>
       </div>
+      {onEdit && resting.length > 0 ? (
+        <div className="resting">
+          <p className="help">Other days</p>
+          {resting.map((track) => (
+            <button key={track.id} type="button" className="track-text" onClick={() => onEdit(track)}>
+              <span className="track-name">{track.name}</span>
+              <span className="track-meta">{scheduleLabel(track.weekdays)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {onAdd ? (
         <button type="button" className="add-button" onClick={onAdd} disabled={addDisabled} aria-label="Add a habit or vice">
           +

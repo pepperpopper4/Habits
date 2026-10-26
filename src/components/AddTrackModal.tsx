@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
+import { ALL_WEEKDAYS, WEEKDAYS } from '../lib/dates';
 import type { Kind } from '../types';
 
 export type TrackDraft = {
@@ -6,10 +7,11 @@ export type TrackDraft = {
   kind: Kind;
   gain: number;
   loss: number;
+  weekdays: number;
 };
 
 type Props = {
-  mode: 'create' | 'counter';
+  mode: 'create' | 'edit';
   initial: TrackDraft;
   busy: boolean;
   error: string | null;
@@ -30,8 +32,9 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
   const [kind, setKind] = useState<Kind>(initial.kind);
   const [gain, setGain] = useState(String(initial.gain));
   const [loss, setLoss] = useState(String(initial.loss));
+  const [daily, setDaily] = useState((initial.weekdays || ALL_WEEKDAYS) === ALL_WEEKDAYS);
+  const [days, setDays] = useState(initial.weekdays || ALL_WEEKDAYS);
   const [localError, setLocalError] = useState<string | null>(null);
-  const locked = mode === 'counter';
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -54,7 +57,8 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
     const cleanName = name.trim();
     const gainPoints = wholePoints(gain);
     const lossPoints = wholePoints(loss);
-    if (!locked && (cleanName.length < 1 || cleanName.length > 60)) {
+    const weekdays = daily ? ALL_WEEKDAYS : days;
+    if (cleanName.length < 1 || cleanName.length > 60) {
       setLocalError('Name must be 1 to 60 characters.');
       return;
     }
@@ -62,8 +66,12 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
       setLocalError('Points must be whole numbers from 1 to 99.');
       return;
     }
+    if (weekdays < 1) {
+      setLocalError('Pick at least one day.');
+      return;
+    }
     setLocalError(null);
-    onSubmit({ name: cleanName, kind, gain: gainPoints, loss: lossPoints });
+    onSubmit({ name: cleanName, kind, gain: gainPoints, loss: lossPoints, weekdays });
   }
 
   return (
@@ -73,13 +81,16 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <form onSubmit={submit}>
           <div className="sheet-head">
-            <h2 id={titleId}>{locked ? 'Counter the offer' : 'Add a habit or vice'}</h2>
+            <h2 id={titleId}>{mode === 'edit' ? 'Edit' : 'Add a habit or vice'}</h2>
             <button type="button" className="icon-button" onClick={onClose} disabled={busy} aria-label="Close">
               ×
             </button>
           </div>
           <p className="help">
-            A check marks a habit done or a vice avoided, and scores the gain. An empty box scores the loss. It is added to your list right away.
+            A check marks a habit done or a vice avoided, and scores the gain. An empty box scores the loss.
+            {mode === 'edit'
+              ? ' Days you leave off stay off the list and do not score.'
+              : ' It is added to your list right away.'}
           </p>
           <label className="field">
             <span>Name</span>
@@ -88,11 +99,11 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
               onChange={(event) => setName(event.target.value)}
               maxLength={60}
               required
-              disabled={locked || busy}
-              autoFocus={!locked}
+              disabled={busy}
+              autoFocus
             />
           </label>
-          <fieldset className="choice" disabled={locked || busy}>
+          <fieldset className="choice" disabled={busy}>
             <legend>Kind</legend>
             <label className={kind === 'habit' ? 'choice-option on' : 'choice-option'}>
               <input
@@ -123,7 +134,6 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
                 value={gain}
                 onChange={(event) => setGain(event.target.value)}
                 disabled={busy}
-                autoFocus={locked}
               />
             </label>
             <label className="field">
@@ -136,13 +146,46 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
               />
             </label>
           </div>
+          <label className="daily-row">
+            <input
+              type="checkbox"
+              checked={daily}
+              disabled={busy}
+              onChange={(event) => {
+                const next = event.target.checked;
+                setDaily(next);
+                if (!next && days < 1) setDays(ALL_WEEKDAYS);
+              }}
+            />
+            <span>Daily</span>
+          </label>
+          {daily ? null : (
+            <div className="weekday-board" role="group" aria-label="Days">
+              {WEEKDAYS.map((day) => {
+                const on = (days & (1 << day.bit)) !== 0;
+                return (
+                  <button
+                    key={day.name}
+                    type="button"
+                    className={on ? 'weekday on' : 'weekday'}
+                    aria-pressed={on}
+                    aria-label={day.name}
+                    disabled={busy}
+                    onClick={() => setDays((current) => current ^ (1 << day.bit))}
+                  >
+                    {day.letter}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {localError || error ? <p className="error">{localError || error}</p> : null}
           <div className="sheet-actions">
             <button type="button" className="button" onClick={onClose} disabled={busy}>
               Cancel
             </button>
             <button type="submit" className="button primary" disabled={busy}>
-              {locked ? 'Send counter' : 'Add it'}
+              {mode === 'edit' ? 'Save' : 'Add it'}
             </button>
           </div>
         </form>

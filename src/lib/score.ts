@@ -1,5 +1,5 @@
 import type { Check, ScoringMode, Track } from '../types';
-import { daysFrom } from './dates';
+import { daysFrom, isScheduled } from './dates';
 
 export type { ScoringMode };
 
@@ -21,8 +21,12 @@ export type DayPoints = {
   maxLoss: number;
 };
 
+export function showsOn(track: Track, day: string): boolean {
+  return track.starts_on <= day && isScheduled(track.weekdays, day);
+}
+
 function activeTracks(tracks: Track[], ownerId: string, day: string): Track[] {
-  return tracks.filter((track) => track.owner_id === ownerId && track.starts_on <= day);
+  return tracks.filter((track) => track.owner_id === ownerId && showsOn(track, day));
 }
 
 export function pointsForDay(

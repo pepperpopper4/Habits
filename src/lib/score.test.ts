@@ -12,6 +12,7 @@ const habit: Track = {
   gain: 2,
   loss: 1,
   starts_on: '2026-10-24',
+  weekdays: 127,
   created_at: '2026-10-24T00:00:00.000Z',
 };
 
@@ -48,6 +49,12 @@ describe('scoreParticipant', () => {
 
   it('adds both lists together', () => {
     expect(scoreParticipant([habit, vice], [], 'alex', '2026-10-24')).toBe(-5);
+  });
+
+  it('skips days the item is not scheduled', () => {
+    const mondays = { ...habit, weekdays: 2 };
+    expect(scoreParticipant([mondays], [], 'alex', '2026-10-25')).toBe(0);
+    expect(scoreParticipant([mondays], [], 'alex', '2026-10-26')).toBe(-1);
   });
 });
 

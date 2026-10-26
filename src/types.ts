@@ -54,6 +54,7 @@ export type Track = {
   gain: number;
   loss: number;
   starts_on: string;
+  weekdays: number;
   created_at: string;
 };
 

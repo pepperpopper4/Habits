@@ -14,6 +14,36 @@ export function todayKey(timeZone: string, now = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export const ALL_WEEKDAYS = 127;
+
+export const WEEKDAYS = [
+  { bit: 0, letter: 'S', name: 'Sunday', short: 'Sun' },
+  { bit: 1, letter: 'M', name: 'Monday', short: 'Mon' },
+  { bit: 2, letter: 'T', name: 'Tuesday', short: 'Tue' },
+  { bit: 3, letter: 'W', name: 'Wednesday', short: 'Wed' },
+  { bit: 4, letter: 'T', name: 'Thursday', short: 'Thu' },
+  { bit: 5, letter: 'F', name: 'Friday', short: 'Fri' },
+  { bit: 6, letter: 'S', name: 'Saturday', short: 'Sat' },
+] as const;
+
+export function weekdayIndex(isoDate: string): number {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+export function isScheduled(weekdays: number | null | undefined, isoDate: string): boolean {
+  const mask = weekdays == null ? ALL_WEEKDAYS : weekdays;
+  return (mask & (1 << weekdayIndex(isoDate))) !== 0;
+}
+
+export function scheduleLabel(weekdays: number | null | undefined): string | null {
+  const mask = weekdays == null ? ALL_WEEKDAYS : weekdays;
+  if (mask === ALL_WEEKDAYS) return null;
+  return WEEKDAYS.filter((day) => mask & (1 << day.bit))
+    .map((day) => day.short)
+    .join(' ');
+}
+
 export function addDay(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));

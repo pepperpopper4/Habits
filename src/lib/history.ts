@@ -1,5 +1,5 @@
 import type { Check, Track } from '../types';
-import { daysFrom } from './dates';
+import { daysFrom, weekdayIndex } from './dates';
 import { formatPoints, pointsForDay, rawScoring, type Scoring } from './score';
 
 export type DayScore = {
@@ -55,11 +55,6 @@ export function personHistory(
   if (started.length === 0) return [];
   const start = started.reduce((earliest, track) => (track.starts_on < earliest ? track.starts_on : earliest), started[0].starts_on);
   return daysFrom(start, today).map((day) => scoreDay(tracks, checks, ownerId, day, scoring));
-}
-
-function weekdayIndex(isoDate: string): number {
-  const [year, month, day] = isoDate.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 export function historyWeeks(start: string, end: string): (string | null)[][] {

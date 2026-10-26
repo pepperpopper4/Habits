@@ -12,6 +12,7 @@ const habit: Track = {
   gain: 2,
   loss: 1,
   starts_on: '2026-10-24',
+  weekdays: 127,
   created_at: '2026-10-24T00:00:00.000Z',
 };
 

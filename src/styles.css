@@ -317,11 +317,27 @@ h2 {
   border-bottom: 0;
 }
 
-.track-copy {
+.track-copy,
+.track-text {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
+}
+
+.track-text {
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.resting {
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
 }
 
 .track-name {
@@ -545,6 +561,42 @@ textarea {
 .choice-option input {
   width: auto;
   margin: 0;
+}
+
+.daily-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  min-height: 44px;
+}
+
+.daily-row input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.weekday-board {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.weekday {
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  font-weight: 650;
+}
+
+.weekday.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .split {

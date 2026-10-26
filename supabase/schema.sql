@@ -55,6 +55,7 @@ create table if not exists public.tracks (
   gain integer not null check (gain between 1 and 99),
   loss integer not null check (loss between 1 and 99),
   starts_on date not null,
+  weekdays smallint not null default 127 check (weekdays between 1 and 127),
   created_at timestamptz not null default now()
 );
 
@@ -65,6 +66,19 @@ create table if not exists public.checks (
   day date not null,
   unique (track_id, day)
 );
+
+alter table public.tracks add column if not exists weekdays smallint not null default 127;
+
+do $track_weekdays$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'tracks_weekdays_check' and conrelid = 'public.tracks'::regclass
+  ) then
+    alter table public.tracks add constraint tracks_weekdays_check check (weekdays between 1 and 127);
+  end if;
+end
+$track_weekdays$;
 
 alter table public.pairs add column if not exists title text not null default 'Board';
 alter table public.pairs add column if not exists scoring text not null default 'raw';
@@ -556,12 +570,15 @@ begin
 end;
 $$;
 
+drop function if exists public.add_track(uuid, text, text, integer, integer);
+
 create or replace function public.add_track(
   p_pair_id uuid,
   p_name text,
   p_kind text,
   p_gain integer,
-  p_loss integer
+  p_loss integer,
+  p_weekdays integer
 )
 returns jsonb
 language plpgsql
@@ -592,14 +609,67 @@ begin
   if p_gain is null or p_loss is null or p_gain < 1 or p_loss < 1 or p_gain > 99 or p_loss > 99 then
     raise exception 'points must be from 1 to 99';
   end if;
+  if p_weekdays is null or p_weekdays < 1 or p_weekdays > 127 then
+    raise exception 'pick at least one day';
+  end if;
   today := public.pair_today(p_pair_id);
   if today is null then
     raise exception 'you are not on this board';
   end if;
-  insert into public.tracks (pair_id, owner_id, name, kind, gain, loss, starts_on)
-  values (p_pair_id, me.id, clean_name, p_kind, p_gain, p_loss, today)
+  insert into public.tracks (pair_id, owner_id, name, kind, gain, loss, starts_on, weekdays)
+  values (p_pair_id, me.id, clean_name, p_kind, p_gain, p_loss, today, p_weekdays)
   returning * into created;
   return to_jsonb(created);
+end;
+$$;
+
+create or replace function public.update_track(
+  p_track_id uuid,
+  p_name text,
+  p_kind text,
+  p_gain integer,
+  p_loss integer,
+  p_weekdays integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row public.tracks;
+  clean_name text := btrim(p_name);
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select * into row from public.tracks where id = p_track_id for update;
+  if not found then
+    raise exception 'item not found';
+  end if;
+  if not public.is_pair_member(row.pair_id) then
+    raise exception 'item not found';
+  end if;
+  if row.owner_id is distinct from public.participant_id_for(row.pair_id) then
+    raise exception 'you can only edit your own items';
+  end if;
+  if char_length(clean_name) < 1 or char_length(clean_name) > 60 then
+    raise exception 'name must be 1 to 60 characters';
+  end if;
+  if p_kind not in ('habit', 'vice') then
+    raise exception 'pick a habit or a vice';
+  end if;
+  if p_gain is null or p_loss is null or p_gain < 1 or p_loss < 1 or p_gain > 99 or p_loss > 99 then
+    raise exception 'points must be from 1 to 99';
+  end if;
+  if p_weekdays is null or p_weekdays < 1 or p_weekdays > 127 then
+    raise exception 'pick at least one day';
+  end if;
+  update public.tracks
+    set name = clean_name, kind = p_kind, gain = p_gain, loss = p_loss, weekdays = p_weekdays
+    where id = row.id
+    returning * into row;
+  return to_jsonb(row);
 end;
 $$;
 
@@ -640,7 +710,8 @@ revoke all on function public.join_pair(text, text) from public, anon, authentic
 revoke all on function public.propose_track(uuid, text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.propose_track(text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.respond_offer(uuid, text, integer, integer) from public, anon, authenticated;
-revoke all on function public.add_track(uuid, text, text, integer, integer) from public, anon, authenticated;
+revoke all on function public.add_track(uuid, text, text, integer, integer, integer) from public, anon, authenticated;
+revoke all on function public.update_track(uuid, text, text, integer, integer, integer) from public, anon, authenticated;
 revoke all on function public.delete_pair(uuid) from public, anon, authenticated;
 
 grant execute on function public.is_pair_member(uuid) to authenticated;
@@ -653,7 +724,8 @@ grant execute on function public.join_pair(text, text) to authenticated;
 grant execute on function public.propose_track(uuid, text, text, integer, integer) to authenticated;
 grant execute on function public.propose_track(text, text, integer, integer) to authenticated;
 grant execute on function public.respond_offer(uuid, text, integer, integer) to authenticated;
-grant execute on function public.add_track(uuid, text, text, integer, integer) to authenticated;
+grant execute on function public.add_track(uuid, text, text, integer, integer, integer) to authenticated;
+grant execute on function public.update_track(uuid, text, text, integer, integer, integer) to authenticated;
 grant execute on function public.delete_pair(uuid) to authenticated;
 
 alter table public.pairs enable row level security;
@@ -706,6 +778,7 @@ create policy checks_insert on public.checks
         and t.pair_id = pair_id
         and t.owner_id = public.participant_id_for(pair_id)
         and t.starts_on <= day
+        and (t.weekdays & (1 << extract(dow from day)::integer)) <> 0
     )
   );
 
