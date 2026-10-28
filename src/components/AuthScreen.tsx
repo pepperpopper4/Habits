@@ -9,6 +9,7 @@ type AuthProps = {
 type PairProps = {
   onJoined: (pairId: string) => void;
   onSignOut: () => void;
+  onCancel?: () => void;
 };
 
 const CODE_ALPHABET = /[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g;
@@ -104,7 +105,7 @@ export function AuthScreen({ onSignedIn }: AuthProps) {
   );
 }
 
-export function PairScreen({ onJoined, onSignOut }: PairProps) {
+export function PairScreen({ onJoined, onSignOut, onCancel }: PairProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +153,7 @@ export function PairScreen({ onJoined, onSignOut }: PairProps) {
   }
 
   return (
-    <main className="shell">
+    <main className="shell with-tabs">
       <section className="auth-card">
         <p className="brand">Habits</p>
         <h1>Start a board</h1>
@@ -184,9 +185,15 @@ export function PairScreen({ onJoined, onSignOut }: PairProps) {
           </button>
         </form>
         {error ? <p className="error">{error}</p> : null}
-        <button type="button" className="text-button" onClick={onSignOut}>
-          Sign out
-        </button>
+        {onCancel ? (
+          <button type="button" className="text-button" onClick={onCancel}>
+            Back to boards
+          </button>
+        ) : (
+          <button type="button" className="text-button" onClick={onSignOut}>
+            Sign out
+          </button>
+        )}
       </section>
     </main>
   );

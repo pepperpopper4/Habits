@@ -11,6 +11,10 @@ type Props = {
   busy: boolean;
   onToggle: (track: Track, checked: boolean) => void;
   onEdit?: (track: Track) => void;
+  nudgeNote?: string | null;
+  canNudge?: boolean;
+  nudged?: boolean;
+  onNudge?: (track: Track) => void;
 };
 
 function CheckMark() {
@@ -28,7 +32,20 @@ function CheckMark() {
   );
 }
 
-export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle, onEdit }: Props) {
+export function TrackRow({
+  track,
+  gain,
+  loss,
+  checked,
+  editable,
+  busy,
+  onToggle,
+  onEdit,
+  nudgeNote,
+  canNudge = false,
+  nudged = false,
+  onNudge,
+}: Props) {
   const kindLabel = track.kind === 'habit' ? 'Habit' : 'Vice';
   const stateLabel = checked ? 'checked' : 'not checked';
   const days = scheduleLabel(track.weekdays);
@@ -52,6 +69,11 @@ export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle,
                 {days}
               </>
             ) : null}
+            {track.visibility === 'public' ? (
+              <>
+                <span aria-hidden="true"> · </span>Public
+              </>
+            ) : null}
           </span>
         </button>
       ) : (
@@ -66,9 +88,20 @@ export function TrackRow({ track, gain, loss, checked, editable, busy, onToggle,
                 {days}
               </>
             ) : null}
+            {track.visibility === 'public' ? (
+              <>
+                <span aria-hidden="true"> · </span>Public
+              </>
+            ) : null}
           </span>
         </div>
       )}
+      {nudgeNote ? <p className="nudge-note">{nudgeNote}</p> : null}
+      {canNudge && !checked && onNudge ? (
+        <button type="button" className="nudge" disabled={busy || nudged} onClick={() => onNudge(track)}>
+          {nudged ? 'Nudged' : 'Nudge'}
+        </button>
+      ) : null}
       {editable ? (
         <button
           type="button"

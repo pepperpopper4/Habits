@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Check, Track } from '../types';
-import { historyKind, historyLevel, historyPhrase, historyWeeks, monthLabels, monthName, personHistory, scoreDay } from './history';
+import { combinedHistory, historyKind, historyLevel, historyPhrase, historyWeeks, monthLabels, monthName, personHistory, scoreDay } from './history';
+import { rawScoring } from './score';
 
 const habit: Track = {
   id: 'habit',
@@ -13,6 +14,7 @@ const habit: Track = {
   loss: 1,
   starts_on: '2026-10-24',
   weekdays: 127,
+  visibility: 'private',
   created_at: '2026-10-24T00:00:00.000Z',
 };
 
@@ -78,5 +80,19 @@ describe('historyWeeks', () => {
     const labels = monthLabels(weeks);
     expect(labels[0]).toBe(monthName('2026-10-25'));
     expect(labels).toContain(monthName('2026-11-01'));
+  });
+});
+
+describe('combinedHistory', () => {
+  it('adds every board into one day', () => {
+    const other = { ...habit, id: 'other', pair_id: 'pair-2', owner_id: 'alex-2', loss: 3 };
+    const days = combinedHistory(
+      [
+        { ownerId: 'alex', tracks: [habit], checks: [], scoring: rawScoring },
+        { ownerId: 'alex-2', tracks: [other], checks: [], scoring: rawScoring },
+      ],
+      '2026-10-24',
+    );
+    expect(days).toEqual([{ day: '2026-10-24', score: -4, maxGain: 4, maxLoss: 4 }]);
   });
 });

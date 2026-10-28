@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { AuthScreen, PairScreen, SetupScreen } from './components/AuthScreen';
 import { Board } from './components/Board';
+import { BoardsHome } from './components/BoardsHome';
+import { FeedScreen } from './components/FeedScreen';
+import { ProfileScreen } from './components/ProfileScreen';
+import { RankingsScreen } from './components/RankingsScreen';
+import { TabBar, type Tab } from './components/TabBar';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import type { Membership, Pair, Participant } from './types';
 
@@ -125,8 +130,6 @@ export function App() {
     await supabase.auth.signOut();
   }
 
-  const active = memberships?.find((membership) => membership.pair.id === boardId) ?? null;
-
   if (!isSupabaseConfigured) return <SetupScreen />;
   if (session === undefined || (session && memberships === undefined)) {
     return (
@@ -136,31 +139,110 @@ export function App() {
     );
   }
   if (!session) return <AuthScreen onSignedIn={() => setProfileVersion((value) => value + 1)} />;
-  if (profileError) {
-    return (
-      <main className="shell">
-        <section className="auth-card">
-          <p className="error">{profileError}</p>
-          <button type="button" className="button" onClick={() => setProfileVersion((value) => value + 1)}>
-            Try again
-          </button>
-        </section>
-      </main>
-    );
-  }
-  if (!active) {
-    return <PairScreen onJoined={openBoard} onSignOut={() => void signOut()} />;
-  }
   return (
-    <Board
-      key={active.pair.id}
-      pairId={active.pair.id}
+    <SignedIn
       userId={session.user.id}
       memberships={memberships ?? []}
+      boardId={boardId}
+      profileError={profileError}
       onSelectBoard={selectBoard}
       onOpenBoard={openBoard}
       onDeleted={leaveBoard}
       onSignOut={() => void signOut()}
+      onRetry={() => setProfileVersion((value) => value + 1)}
     />
+  );
+}
+
+function SignedIn({
+  userId,
+  memberships,
+  boardId,
+  profileError,
+  onSelectBoard,
+  onOpenBoard,
+  onDeleted,
+  onSignOut,
+  onRetry,
+}: {
+  userId: string;
+  memberships: Membership[];
+  boardId: string | null;
+  profileError: string | null;
+  onSelectBoard: (pairId: string) => void;
+  onOpenBoard: (pairId: string) => void;
+  onDeleted: (pairId: string) => void;
+  onSignOut: () => void;
+  onRetry: () => void;
+}) {
+  const [tab, setTab] = useState<Tab>('boards');
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const active = memberships.find((membership) => membership.pair.id === boardId) ?? null;
+
+  return (
+    <>
+      {tab === 'boards' && profileError ? (
+        <main className="shell with-tabs">
+          <p className="error">{profileError}</p>
+          <button type="button" className="button" onClick={onRetry}>
+            Try again
+          </button>
+        </main>
+      ) : null}
+      {tab === 'boards' && !profileError && creating ? (
+        <PairScreen
+          onCancel={memberships.length > 0 ? () => setCreating(false) : undefined}
+          onJoined={(pairId) => {
+            onOpenBoard(pairId);
+            setCreating(false);
+            setOpen(true);
+          }}
+          onSignOut={onSignOut}
+        />
+      ) : null}
+      {tab === 'boards' && !profileError && !creating && (!open || !active) ? (
+        memberships.length === 0 ? (
+          <PairScreen
+            onJoined={(pairId) => {
+              onOpenBoard(pairId);
+              setOpen(true);
+            }}
+            onSignOut={onSignOut}
+          />
+        ) : (
+          <BoardsHome
+            memberships={memberships}
+            onOpen={(pairId) => {
+              onSelectBoard(pairId);
+              setOpen(true);
+            }}
+            onCreate={() => setCreating(true)}
+          />
+        )
+      ) : null}
+      {tab === 'boards' && !profileError && !creating && open && active ? (
+        <Board
+          key={active.pair.id}
+          pairId={active.pair.id}
+          userId={userId}
+          memberships={memberships}
+          onSelectBoard={onSelectBoard}
+          onOpenBoard={onOpenBoard}
+          onDeleted={(pairId) => {
+            onDeleted(pairId);
+            setOpen(false);
+          }}
+          onSignOut={onSignOut}
+          onBack={() => setOpen(false)}
+        />
+      ) : null}
+      {tab === 'feed' ? <FeedScreen /> : null}
+      {tab === 'rankings' ? <RankingsScreen userId={userId} /> : null}
+      {tab === 'profile' ? (
+        <ProfileScreen memberships={memberships} onSignOut={onSignOut} onAccountDeleted={onSignOut} />
+      ) : null}
+      <TabBar tab={tab} onChange={setTab} />
+    </>
   );
 }

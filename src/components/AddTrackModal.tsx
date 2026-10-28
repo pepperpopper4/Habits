@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { ALL_WEEKDAYS, WEEKDAYS } from '../lib/dates';
-import type { Kind } from '../types';
+import type { Kind, Visibility } from '../types';
 
 export type TrackDraft = {
   name: string;
@@ -8,6 +8,7 @@ export type TrackDraft = {
   gain: number;
   loss: number;
   weekdays: number;
+  visibility: Visibility;
 };
 
 type Props = {
@@ -34,6 +35,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
   const [loss, setLoss] = useState(String(initial.loss));
   const [daily, setDaily] = useState((initial.weekdays || ALL_WEEKDAYS) === ALL_WEEKDAYS);
   const [days, setDays] = useState(initial.weekdays || ALL_WEEKDAYS);
+  const [isPublic, setIsPublic] = useState(initial.visibility === 'public');
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,7 +73,14 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
       return;
     }
     setLocalError(null);
-    onSubmit({ name: cleanName, kind, gain: gainPoints, loss: lossPoints, weekdays });
+    onSubmit({
+      name: cleanName,
+      kind,
+      gain: gainPoints,
+      loss: lossPoints,
+      weekdays,
+      visibility: isPublic ? 'public' : 'private',
+    });
   }
 
   return (
@@ -91,6 +100,8 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
             {mode === 'edit'
               ? ' Days you leave off stay off the list and do not score.'
               : ' It is added to your list right away.'}
+            {' '}
+            Public checks show on your friends' feed. Private stays on this board.
           </p>
           <label className="field">
             <span>Name</span>
@@ -146,6 +157,15 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
               />
             </label>
           </div>
+          <label className="daily-row">
+            <input
+              type="checkbox"
+              checked={isPublic}
+              disabled={busy}
+              onChange={(event) => setIsPublic(event.target.checked)}
+            />
+            <span>Public</span>
+          </label>
           <label className="daily-row">
             <input
               type="checkbox"

@@ -57,6 +57,30 @@ export function personHistory(
   return daysFrom(start, today).map((day) => scoreDay(tracks, checks, ownerId, day, scoring));
 }
 
+export type HistoryBoard = {
+  ownerId: string;
+  tracks: Track[];
+  checks: Check[];
+  scoring: Scoring;
+};
+
+export function combinedHistory(boards: HistoryBoard[], today: string): DayScore[] {
+  const started = boards.flatMap((board) =>
+    board.tracks.filter((track) => track.owner_id === board.ownerId && track.starts_on <= today),
+  );
+  if (started.length === 0) return [];
+  const start = started.reduce((earliest, track) => (track.starts_on < earliest ? track.starts_on : earliest), started[0].starts_on);
+  return daysFrom(start, today).map((day) => {
+    const points = boards.map((board) => pointsForDay(board.tracks, board.checks, board.ownerId, day, board.scoring));
+    return {
+      day,
+      score: points.reduce((sum, point) => sum + point.score, 0),
+      maxGain: points.reduce((sum, point) => sum + point.maxGain, 0),
+      maxLoss: points.reduce((sum, point) => sum + point.maxLoss, 0),
+    };
+  });
+}
+
 export function historyWeeks(start: string, end: string): (string | null)[][] {
   if (start > end) return [];
   const cells: (string | null)[] = Array.from({ length: weekdayIndex(start) }, () => null);

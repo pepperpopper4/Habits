@@ -43,6 +43,7 @@ export function useBoard(pairId: string) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracks', filter: `pair_id=eq.${pairId}` }, schedule)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'offers', filter: `pair_id=eq.${pairId}` }, schedule)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'checks', filter: `pair_id=eq.${pairId}` }, schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nudges', filter: `pair_id=eq.${pairId}` }, schedule)
       .subscribe();
 
     return () => {

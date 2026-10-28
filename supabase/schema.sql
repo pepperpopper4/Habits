@@ -56,6 +56,7 @@ create table if not exists public.tracks (
   loss integer not null check (loss between 1 and 99),
   starts_on date not null,
   weekdays smallint not null default 127 check (weekdays between 1 and 127),
+  visibility text not null default 'private' check (visibility in ('private', 'public')),
   created_at timestamptz not null default now()
 );
 
@@ -64,6 +65,7 @@ create table if not exists public.checks (
   pair_id uuid not null references public.pairs (id) on delete cascade,
   track_id uuid not null references public.tracks (id) on delete cascade,
   day date not null,
+  created_at timestamptz not null default now(),
   unique (track_id, day)
 );
 
@@ -79,6 +81,46 @@ begin
   end if;
 end
 $track_weekdays$;
+
+alter table public.tracks add column if not exists visibility text not null default 'private';
+alter table public.checks add column if not exists created_at timestamptz not null default now();
+
+do $track_visibility$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'tracks_visibility_check' and conrelid = 'public.tracks'::regclass
+  ) then
+    alter table public.tracks add constraint tracks_visibility_check check (visibility in ('private', 'public'));
+  end if;
+end
+$track_visibility$;
+
+create table if not exists public.profiles (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  display_name text not null check (char_length(display_name) between 1 and 32)
+);
+
+create table if not exists public.friendships (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references auth.users (id) on delete cascade,
+  addressee_id uuid not null references auth.users (id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz not null default now(),
+  unique (requester_id, addressee_id),
+  check (requester_id <> addressee_id)
+);
+
+create table if not exists public.nudges (
+  id uuid primary key default gen_random_uuid(),
+  pair_id uuid not null references public.pairs (id) on delete cascade,
+  track_id uuid not null references public.tracks (id) on delete cascade,
+  day date not null,
+  from_user_id uuid not null references auth.users (id) on delete cascade,
+  to_user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (track_id, day, from_user_id)
+);
 
 alter table public.pairs add column if not exists title text not null default 'Board';
 alter table public.pairs add column if not exists scoring text not null default 'raw';
@@ -334,6 +376,7 @@ begin
 
   insert into public.participants (pair_id, user_id, display_name, seat)
   values (new_pair.id, auth.uid(), clean_name, 1);
+  perform public.upsert_my_profile(clean_name);
 
   return jsonb_build_object('pair_id', new_pair.id, 'invite_code', code);
 end;
@@ -378,6 +421,7 @@ begin
 
   insert into public.participants (pair_id, user_id, display_name, seat)
   values (the_pair.id, auth.uid(), clean_name, next_seat);
+  perform public.upsert_my_profile(clean_name);
 
   return jsonb_build_object('pair_id', the_pair.id);
 end;
@@ -571,6 +615,7 @@ end;
 $$;
 
 drop function if exists public.add_track(uuid, text, text, integer, integer);
+drop function if exists public.add_track(uuid, text, text, integer, integer, integer);
 
 create or replace function public.add_track(
   p_pair_id uuid,
@@ -578,7 +623,8 @@ create or replace function public.add_track(
   p_kind text,
   p_gain integer,
   p_loss integer,
-  p_weekdays integer
+  p_weekdays integer,
+  p_visibility text default 'private'
 )
 returns jsonb
 language plpgsql
@@ -612,16 +658,21 @@ begin
   if p_weekdays is null or p_weekdays < 1 or p_weekdays > 127 then
     raise exception 'pick at least one day';
   end if;
+  if p_visibility is null or p_visibility not in ('private', 'public') then
+    raise exception 'pick public or private';
+  end if;
   today := public.pair_today(p_pair_id);
   if today is null then
     raise exception 'you are not on this board';
   end if;
-  insert into public.tracks (pair_id, owner_id, name, kind, gain, loss, starts_on, weekdays)
-  values (p_pair_id, me.id, clean_name, p_kind, p_gain, p_loss, today, p_weekdays)
+  insert into public.tracks (pair_id, owner_id, name, kind, gain, loss, starts_on, weekdays, visibility)
+  values (p_pair_id, me.id, clean_name, p_kind, p_gain, p_loss, today, p_weekdays, p_visibility)
   returning * into created;
   return to_jsonb(created);
 end;
 $$;
+
+drop function if exists public.update_track(uuid, text, text, integer, integer, integer);
 
 create or replace function public.update_track(
   p_track_id uuid,
@@ -629,7 +680,8 @@ create or replace function public.update_track(
   p_kind text,
   p_gain integer,
   p_loss integer,
-  p_weekdays integer
+  p_weekdays integer,
+  p_visibility text default null
 )
 returns jsonb
 language plpgsql
@@ -665,8 +717,16 @@ begin
   if p_weekdays is null or p_weekdays < 1 or p_weekdays > 127 then
     raise exception 'pick at least one day';
   end if;
+  if p_visibility is not null and p_visibility not in ('private', 'public') then
+    raise exception 'pick public or private';
+  end if;
   update public.tracks
-    set name = clean_name, kind = p_kind, gain = p_gain, loss = p_loss, weekdays = p_weekdays
+    set name = clean_name,
+        kind = p_kind,
+        gain = p_gain,
+        loss = p_loss,
+        weekdays = p_weekdays,
+        visibility = coalesce(p_visibility, visibility)
     where id = row.id
     returning * into row;
   return to_jsonb(row);
@@ -698,6 +758,391 @@ begin
 end;
 $$;
 
+create or replace function public.upsert_my_profile(p_display_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  clean_name text := btrim(p_display_name);
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  if char_length(clean_name) < 1 or char_length(clean_name) > 32 then
+    raise exception 'name must be 1 to 32 characters';
+  end if;
+  insert into public.profiles (user_id, display_name)
+  values (auth.uid(), clean_name)
+  on conflict (user_id) do nothing;
+end;
+$$;
+
+create or replace function public.ensure_profile()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing public.profiles;
+  fallback text;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select * into existing from public.profiles where user_id = auth.uid();
+  if found then
+    return to_jsonb(existing);
+  end if;
+  select display_name into fallback
+  from public.participants
+  where user_id = auth.uid()
+  order by seat
+  limit 1;
+  if fallback is null or char_length(btrim(fallback)) < 1 then
+    fallback := 'Friend';
+  end if;
+  insert into public.profiles (user_id, display_name)
+  values (auth.uid(), left(btrim(fallback), 32))
+  returning * into existing;
+  return to_jsonb(existing);
+end;
+$$;
+
+create or replace function public.update_profile(p_display_name text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  clean_name text := btrim(p_display_name);
+  existing public.profiles;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  if char_length(clean_name) < 1 or char_length(clean_name) > 32 then
+    raise exception 'name must be 1 to 32 characters';
+  end if;
+  insert into public.profiles (user_id, display_name)
+  values (auth.uid(), clean_name)
+  on conflict (user_id) do update set display_name = excluded.display_name
+  returning * into existing;
+  return to_jsonb(existing);
+end;
+$$;
+
+create or replace function public.are_friends(p_left uuid, p_right uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.friendships
+    where status = 'accepted'
+      and (
+        (requester_id = p_left and addressee_id = p_right)
+        or (requester_id = p_right and addressee_id = p_left)
+      )
+  )
+$$;
+
+create or replace function public.request_friend(p_user_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing public.friendships;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  if p_user_id is null or p_user_id = auth.uid() then
+    raise exception 'pick someone else';
+  end if;
+  if not exists (
+    select 1
+    from public.participants mine
+    join public.participants theirs on theirs.pair_id = mine.pair_id
+    where mine.user_id = auth.uid()
+      and theirs.user_id = p_user_id
+  ) then
+    raise exception 'you can add people from your boards';
+  end if;
+  select * into existing
+  from public.friendships
+  where (requester_id = auth.uid() and addressee_id = p_user_id)
+     or (requester_id = p_user_id and addressee_id = auth.uid())
+  for update;
+  if found then
+    if existing.status = 'pending' and existing.requester_id = p_user_id then
+      update public.friendships set status = 'accepted' where id = existing.id returning * into existing;
+    end if;
+    return to_jsonb(existing);
+  end if;
+  insert into public.friendships (requester_id, addressee_id)
+  values (auth.uid(), p_user_id)
+  returning * into existing;
+  return to_jsonb(existing);
+end;
+$$;
+
+create or replace function public.respond_friend(p_friendship_id uuid, p_accept boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing public.friendships;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select * into existing
+  from public.friendships
+  where id = p_friendship_id
+  for update;
+  if not found or existing.addressee_id is distinct from auth.uid() then
+    raise exception 'that request is not yours';
+  end if;
+  if p_accept then
+    update public.friendships set status = 'accepted' where id = existing.id;
+  else
+    delete from public.friendships where id = existing.id;
+  end if;
+end;
+$$;
+
+create or replace function public.friend_suggestions()
+returns table (user_id uuid, display_name text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select distinct on (theirs.user_id)
+    theirs.user_id,
+    coalesce(profile.display_name, theirs.display_name) as display_name
+  from public.participants mine
+  join public.participants theirs
+    on theirs.pair_id = mine.pair_id
+   and theirs.user_id <> mine.user_id
+  left join public.profiles profile on profile.user_id = theirs.user_id
+  where mine.user_id = auth.uid()
+    and not exists (
+      select 1
+      from public.friendships friendship
+      where (friendship.requester_id = auth.uid() and friendship.addressee_id = theirs.user_id)
+         or (friendship.requester_id = theirs.user_id and friendship.addressee_id = auth.uid())
+    )
+  order by theirs.user_id, theirs.display_name
+$$;
+
+create or replace function public.friend_requests()
+returns table (id uuid, user_id uuid, display_name text, direction text, status text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    friendship.id,
+    other_id.user_id,
+    coalesce(profile.display_name, board_name.display_name, 'Friend') as display_name,
+    case when friendship.requester_id = auth.uid() then 'outgoing' else 'incoming' end as direction,
+    friendship.status
+  from public.friendships friendship
+  cross join lateral (
+    select case
+      when friendship.requester_id = auth.uid() then friendship.addressee_id
+      else friendship.requester_id
+    end as user_id
+  ) other_id
+  left join public.profiles profile on profile.user_id = other_id.user_id
+  left join lateral (
+    select participants.display_name
+    from public.participants
+    where participants.user_id = other_id.user_id
+    order by participants.seat
+    limit 1
+  ) board_name on true
+  where friendship.requester_id = auth.uid()
+     or friendship.addressee_id = auth.uid()
+  order by friendship.created_at desc
+$$;
+
+create or replace function public.friend_feed()
+returns table (
+  check_id uuid,
+  actor_id uuid,
+  actor_name text,
+  habit_name text,
+  kind text,
+  day date,
+  checked_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    check_row.id,
+    owner.user_id,
+    coalesce(profile.display_name, owner.display_name),
+    track.name,
+    track.kind,
+    check_row.day,
+    check_row.created_at
+  from public.checks check_row
+  join public.tracks track on track.id = check_row.track_id
+  join public.participants owner on owner.id = track.owner_id
+  left join public.profiles profile on profile.user_id = owner.user_id
+  where auth.uid() is not null
+    and track.visibility = 'public'
+    and public.are_friends(auth.uid(), owner.user_id)
+  order by check_row.created_at desc
+  limit 40
+$$;
+
+create or replace function public.friend_rankings()
+returns table (
+  user_id uuid,
+  display_name text,
+  kept integer,
+  scheduled integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with people as (
+    select auth.uid() as user_id
+    union
+    select case
+      when friendship.requester_id = auth.uid() then friendship.addressee_id
+      else friendship.requester_id
+    end
+    from public.friendships friendship
+    where friendship.status = 'accepted'
+      and (friendship.requester_id = auth.uid() or friendship.addressee_id = auth.uid())
+  ),
+  named as (
+    select
+      person.user_id,
+      coalesce(
+        profile.display_name,
+        (
+          select participants.display_name
+          from public.participants
+          where participants.user_id = person.user_id
+          order by participants.seat
+          limit 1
+        ),
+        'Friend'
+      ) as display_name
+    from people person
+    left join public.profiles profile on profile.user_id = person.user_id
+    where person.user_id is not null
+  ),
+  counts as (
+    select
+      named.user_id,
+      named.display_name,
+      count(track.id) filter (
+        where check_row.id is not null
+      )::integer as kept,
+      count(track.id)::integer as scheduled
+    from named
+    left join public.participants owner on owner.user_id = named.user_id
+    left join public.pairs pair on pair.id = owner.pair_id
+    left join public.tracks track
+      on track.owner_id = owner.id
+     and track.visibility = 'public'
+     and track.starts_on <= (pg_catalog.timezone(pair.timezone, pg_catalog.now()))::date
+     and (track.weekdays::integer & (1 << extract(dow from (pg_catalog.timezone(pair.timezone, pg_catalog.now()))::date)::integer)) <> 0
+    left join public.checks check_row
+      on check_row.track_id = track.id
+     and check_row.day = (pg_catalog.timezone(pair.timezone, pg_catalog.now()))::date
+    group by named.user_id, named.display_name
+  )
+  select user_id, display_name, coalesce(kept, 0), coalesce(scheduled, 0)
+  from counts
+$$;
+
+create or replace function public.nudge_track(p_track_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  track public.tracks;
+  owner public.participants;
+  today date;
+  created public.nudges;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  select * into track from public.tracks where id = p_track_id;
+  if not found or not public.is_pair_member(track.pair_id) then
+    raise exception 'item not found';
+  end if;
+  select * into owner from public.participants where id = track.owner_id;
+  if owner.user_id = auth.uid() then
+    raise exception 'nudge someone else';
+  end if;
+  today := public.pair_today(track.pair_id);
+  if today is null or track.starts_on > today then
+    raise exception 'that day is locked';
+  end if;
+  if (track.weekdays & (1 << extract(dow from today)::integer)) = 0 then
+    raise exception 'that day is locked';
+  end if;
+  if exists (
+    select 1 from public.checks
+    where track_id = track.id and day = today
+  ) then
+    raise exception 'already checked';
+  end if;
+  insert into public.nudges (pair_id, track_id, day, from_user_id, to_user_id)
+  values (track.pair_id, track.id, today, auth.uid(), owner.user_id)
+  on conflict (track_id, day, from_user_id) do nothing
+  returning * into created;
+  if not found then
+    select * into created
+    from public.nudges
+    where track_id = track.id and day = today and from_user_id = auth.uid();
+  end if;
+  return to_jsonb(created);
+end;
+$$;
+
+create or replace function public.delete_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
 revoke all on function public.generate_invite_code() from public, anon, authenticated;
 revoke all on function public.protect_pairs() from public, anon, authenticated;
 revoke all on function public.is_pair_member(uuid) from public, anon, authenticated;
@@ -710,9 +1155,21 @@ revoke all on function public.join_pair(text, text) from public, anon, authentic
 revoke all on function public.propose_track(uuid, text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.propose_track(text, text, integer, integer) from public, anon, authenticated;
 revoke all on function public.respond_offer(uuid, text, integer, integer) from public, anon, authenticated;
-revoke all on function public.add_track(uuid, text, text, integer, integer, integer) from public, anon, authenticated;
-revoke all on function public.update_track(uuid, text, text, integer, integer, integer) from public, anon, authenticated;
+revoke all on function public.add_track(uuid, text, text, integer, integer, integer, text) from public, anon, authenticated;
+revoke all on function public.update_track(uuid, text, text, integer, integer, integer, text) from public, anon, authenticated;
 revoke all on function public.delete_pair(uuid) from public, anon, authenticated;
+revoke all on function public.upsert_my_profile(text) from public, anon, authenticated;
+revoke all on function public.ensure_profile() from public, anon, authenticated;
+revoke all on function public.update_profile(text) from public, anon, authenticated;
+revoke all on function public.are_friends(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.request_friend(uuid) from public, anon, authenticated;
+revoke all on function public.respond_friend(uuid, boolean) from public, anon, authenticated;
+revoke all on function public.friend_suggestions() from public, anon, authenticated;
+revoke all on function public.friend_requests() from public, anon, authenticated;
+revoke all on function public.friend_feed() from public, anon, authenticated;
+revoke all on function public.friend_rankings() from public, anon, authenticated;
+revoke all on function public.nudge_track(uuid) from public, anon, authenticated;
+revoke all on function public.delete_account() from public, anon, authenticated;
 
 grant execute on function public.is_pair_member(uuid) to authenticated;
 grant execute on function public.participant_id_for(uuid) to authenticated;
@@ -724,15 +1181,28 @@ grant execute on function public.join_pair(text, text) to authenticated;
 grant execute on function public.propose_track(uuid, text, text, integer, integer) to authenticated;
 grant execute on function public.propose_track(text, text, integer, integer) to authenticated;
 grant execute on function public.respond_offer(uuid, text, integer, integer) to authenticated;
-grant execute on function public.add_track(uuid, text, text, integer, integer, integer) to authenticated;
-grant execute on function public.update_track(uuid, text, text, integer, integer, integer) to authenticated;
+grant execute on function public.add_track(uuid, text, text, integer, integer, integer, text) to authenticated;
+grant execute on function public.update_track(uuid, text, text, integer, integer, integer, text) to authenticated;
 grant execute on function public.delete_pair(uuid) to authenticated;
+grant execute on function public.ensure_profile() to authenticated;
+grant execute on function public.update_profile(text) to authenticated;
+grant execute on function public.request_friend(uuid) to authenticated;
+grant execute on function public.respond_friend(uuid, boolean) to authenticated;
+grant execute on function public.friend_suggestions() to authenticated;
+grant execute on function public.friend_requests() to authenticated;
+grant execute on function public.friend_feed() to authenticated;
+grant execute on function public.friend_rankings() to authenticated;
+grant execute on function public.nudge_track(uuid) to authenticated;
+grant execute on function public.delete_account() to authenticated;
 
 alter table public.pairs enable row level security;
 alter table public.participants enable row level security;
 alter table public.offers enable row level security;
 alter table public.tracks enable row level security;
 alter table public.checks enable row level security;
+alter table public.profiles enable row level security;
+alter table public.friendships enable row level security;
+alter table public.nudges enable row level security;
 
 drop policy if exists pairs_select on public.pairs;
 create policy pairs_select on public.pairs
@@ -782,6 +1252,24 @@ create policy checks_insert on public.checks
     )
   );
 
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles
+  for select to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists friendships_select on public.friendships;
+create policy friendships_select on public.friendships
+  for select to authenticated
+  using (requester_id = auth.uid() or addressee_id = auth.uid());
+
+drop policy if exists nudges_select on public.nudges;
+create policy nudges_select on public.nudges
+  for select to authenticated
+  using (
+    (from_user_id = auth.uid() or to_user_id = auth.uid())
+    and public.is_pair_member(pair_id)
+  );
+
 drop policy if exists checks_delete on public.checks;
 create policy checks_delete on public.checks
   for delete to authenticated
@@ -796,8 +1284,8 @@ create policy checks_delete on public.checks
     )
   );
 
-revoke all on public.pairs, public.participants, public.offers, public.tracks, public.checks from anon, authenticated;
-grant select on public.pairs, public.participants, public.offers, public.tracks, public.checks to authenticated;
+revoke all on public.pairs, public.participants, public.offers, public.tracks, public.checks, public.profiles, public.friendships, public.nudges from anon, authenticated;
+grant select on public.pairs, public.participants, public.offers, public.tracks, public.checks, public.profiles, public.friendships, public.nudges to authenticated;
 grant update on public.pairs to authenticated;
 grant insert, delete on public.checks to authenticated;
 
@@ -808,7 +1296,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     raise exception 'supabase_realtime publication is missing';
   end if;
-  foreach t in array array['pairs', 'participants', 'offers', 'tracks', 'checks']
+  foreach t in array array['pairs', 'participants', 'offers', 'tracks', 'checks', 'nudges']
   loop
     if not exists (
       select 1

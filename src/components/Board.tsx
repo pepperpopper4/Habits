@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addTrack, messageFrom, updateTrack } from '../lib/api';
+import { addTrack, messageFrom, nudgeTrack, updateTrack } from '../lib/api';
 import { scoringFrom, showsOn } from '../lib/score';
 import { supabase } from '../lib/supabase';
 import { useBoard } from '../lib/useBoard';
@@ -17,6 +17,7 @@ type Props = {
   onOpenBoard: (pairId: string) => void;
   onDeleted: (pairId: string) => void;
   onSignOut: () => void;
+  onBack?: () => void;
 };
 
 function GearIcon() {
@@ -34,7 +35,7 @@ function GearIcon() {
   );
 }
 
-export function Board({ pairId, userId, memberships, onSelectBoard, onOpenBoard, onDeleted, onSignOut }: Props) {
+export function Board({ pairId, userId, memberships, onSelectBoard, onOpenBoard, onDeleted, onSignOut, onBack }: Props) {
   const board = useBoard(pairId);
   if (board.loading && !board.data) {
     return (
@@ -58,6 +59,7 @@ export function Board({ pairId, userId, memberships, onSelectBoard, onOpenBoard,
       onOpenBoard={onOpenBoard}
       onDeleted={onDeleted}
       onSignOut={onSignOut}
+      onBack={onBack}
       data={board.data}
       reload={board.reload}
       setData={board.setData}
@@ -72,6 +74,7 @@ function BoardReady({
   onOpenBoard,
   onDeleted,
   onSignOut,
+  onBack,
   data,
   reload,
   setData,
@@ -82,6 +85,7 @@ function BoardReady({
   onOpenBoard: (pairId: string) => void;
   onDeleted: (pairId: string) => void;
   onSignOut: () => void;
+  onBack?: () => void;
   data: BoardData;
   reload: () => Promise<void>;
   setData: (value: BoardData | ((current: BoardData | null) => BoardData | null)) => void;
@@ -105,6 +109,7 @@ function BoardReady({
     );
   }
 
+  const namesByUser = new Map(data.participants.map((person) => [person.user_id, person.display_name]));
   const visibleTracks = data.tracks.filter((track) => showsOn(track, day));
   const myTracks = visibleTracks.filter((track) => track.owner_id === me.id);
 
@@ -130,6 +135,19 @@ function BoardReady({
     else if (checked && (result.data?.length ?? 0) === 0) setActionError('That day is locked.');
     await reload();
     setBusyTrackId(null);
+  }
+
+  async function nudge(track: Track) {
+    setActionError(null);
+    setBusyTrackId(track.id);
+    try {
+      await nudgeTrack(track.id);
+      await reload();
+    } catch (error) {
+      setActionError(messageFrom(error));
+    } finally {
+      setBusyTrackId(null);
+    }
   }
 
   async function submitDraft(draft: TrackDraft) {
@@ -162,9 +180,15 @@ function BoardReady({
   }
 
   return (
-    <main className="shell">
+    <main className="shell with-tabs">
       <header className="topbar">
-        <h1 className="brand">Habits</h1>
+        {onBack ? (
+          <button type="button" className="text-button" onClick={onBack}>
+            Boards
+          </button>
+        ) : (
+          <h1 className="brand">Habits</h1>
+        )}
         <div className="topbar-actions">
           {memberships.length > 1 ? (
             <label className="board-picker">
@@ -220,6 +244,9 @@ function BoardReady({
           setActionError(null);
           setEditing(track);
         }}
+        nudges={data.nudges}
+        namesByUser={namesByUser}
+        viewerUserId={userId}
       />
 
       {others.length === 0 ? (
@@ -242,8 +269,12 @@ function BoardReady({
           goal={data.pair.goal}
           scoring={scoring}
           editable={false}
-            busyTrackId={null}
+            busyTrackId={busyTrackId}
             onToggle={() => undefined}
+            nudges={data.nudges}
+            namesByUser={namesByUser}
+            viewerUserId={userId}
+            onNudge={(track) => void nudge(track)}
           />
         ))
       )}
@@ -251,7 +282,7 @@ function BoardReady({
       {adding ? (
         <AddTrackModal
           mode="create"
-          initial={{ name: '', kind: 'habit', gain: 1, loss: 1, weekdays: 127 }}
+          initial={{ name: '', kind: 'habit', gain: 1, loss: 1, weekdays: 127, visibility: 'private' }}
           busy={busy}
           error={actionError}
           onClose={() => {
@@ -270,6 +301,7 @@ function BoardReady({
             gain: editing.gain,
             loss: editing.loss,
             weekdays: editing.weekdays || 127,
+            visibility: editing.visibility === 'public' ? 'public' : 'private',
           }}
           busy={busy}
           error={actionError}

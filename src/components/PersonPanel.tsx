@@ -3,7 +3,7 @@ import type { DayPhase } from '../lib/useDayColumn';
 import { formatDayLabel, isScheduled, scheduleLabel } from '../lib/dates';
 import { historyKind, historyLevel } from '../lib/history';
 import { formatChange, formatPoints, pointsForDay, settledScore, trackShare, type Scoring } from '../lib/score';
-import type { Check, Participant, Track } from '../types';
+import type { Check, Nudge, Participant, Track } from '../types';
 import { HistoryModal } from './HistoryModal';
 import { ProgressBar } from './ProgressBar';
 import { TrackRow } from './TrackRow';
@@ -24,7 +24,27 @@ type Props = {
   onAdd?: () => void;
   onEdit?: (track: Track) => void;
   addDisabled?: boolean;
+  nudges?: Nudge[];
+  namesByUser?: Map<string, string>;
+  viewerUserId?: string;
+  onNudge?: (track: Track) => void;
 };
+
+export function nudgeNote(
+  nudges: Nudge[],
+  namesByUser: Map<string, string> | undefined,
+  trackId: string,
+  day: string,
+  ownerUserId: string,
+  editable: boolean,
+): string | null {
+  if (!editable) return null;
+  const incoming = nudges.filter((nudge) => nudge.track_id === trackId && nudge.day === day && nudge.to_user_id === ownerUserId);
+  if (incoming.length === 0) return null;
+  const names = incoming.map((nudge) => namesByUser?.get(nudge.from_user_id) ?? 'Someone');
+  const label = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `${label} nudged you`;
+}
 
 export function PersonPanel({
   person,
@@ -42,6 +62,10 @@ export function PersonPanel({
   onAdd,
   onEdit,
   addDisabled = false,
+  nudges = [],
+  namesByUser,
+  viewerUserId,
+  onNudge,
 }: Props) {
   const resting = allTracks.filter(
     (track) => track.owner_id === person.id && track.starts_on <= day && !isScheduled(track.weekdays, day),
@@ -101,6 +125,12 @@ export function PersonPanel({
                   busy={busyTrackId === track.id}
                   onToggle={onToggle}
                   onEdit={onEdit}
+                  nudgeNote={nudgeNote(nudges, namesByUser, track.id, day, person.user_id, editable)}
+                  canNudge={!editable && phase === 'shown'}
+                  nudged={nudges.some(
+                    (nudge) => nudge.track_id === track.id && nudge.day === day && nudge.from_user_id === viewerUserId,
+                  )}
+                  onNudge={onNudge}
                 />
                 );
               })}

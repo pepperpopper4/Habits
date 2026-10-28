@@ -1,5 +1,19 @@
 import { supabase } from './supabase';
-import type { BoardData, Kind } from '../types';
+import type { BoardData, FeedItem, FriendCard, FriendRequest, Kind, Nudge, Profile, Standing, Visibility } from '../types';
+
+export type TrackInput = {
+  name: string;
+  kind: Kind;
+  gain: number;
+  loss: number;
+  weekdays: number;
+  visibility: Visibility;
+};
+
+function missingSchema(error: { message?: string; code?: string }): boolean {
+  const message = error.message ?? '';
+  return error.code === 'PGRST205' || error.code === '42P01' || /schema cache/i.test(message) || /does not exist/i.test(message);
+}
 
 export function messageFrom(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -16,16 +30,18 @@ export function messageFrom(error: unknown): string {
 }
 
 export async function fetchBoard(pairId: string): Promise<BoardData> {
-  const [pair, participants, tracks, offers, checks] = await Promise.all([
+  const [pair, participants, tracks, offers, checks, nudges] = await Promise.all([
     supabase.from('pairs').select('*').eq('id', pairId).single(),
     supabase.from('participants').select('*').eq('pair_id', pairId).order('seat'),
     supabase.from('tracks').select('*').eq('pair_id', pairId).order('created_at'),
     supabase.from('offers').select('*').eq('pair_id', pairId).eq('status', 'pending').order('created_at'),
     supabase.from('checks').select('*').eq('pair_id', pairId),
+    supabase.from('nudges').select('*').eq('pair_id', pairId),
   ]);
 
   const failure = pair.error || participants.error || tracks.error || offers.error || checks.error;
   if (failure) throw failure;
+  if (nudges.error && !missingSchema(nudges.error)) throw nudges.error;
   if (!pair.data || !participants.data || !tracks.data || !offers.data || !checks.data) {
     throw new Error('The board did not load.');
   }
@@ -33,9 +49,14 @@ export async function fetchBoard(pairId: string): Promise<BoardData> {
   return {
     pair: pair.data,
     participants: participants.data,
-    tracks: tracks.data.map((track) => ({ ...track, weekdays: track.weekdays ?? 127 })),
+    tracks: tracks.data.map((track) => ({
+      ...track,
+      weekdays: track.weekdays ?? 127,
+      visibility: track.visibility === 'public' ? 'public' : 'private',
+    })),
     offers: offers.data,
     checks: checks.data,
+    nudges: nudges.error ? [] : ((nudges.data ?? []) as Nudge[]),
   };
 }
 
@@ -69,10 +90,7 @@ export async function deletePair(pairId: string) {
   if (error) throw error;
 }
 
-export async function addTrack(
-  pairId: string,
-  input: { name: string; kind: Kind; gain: number; loss: number; weekdays: number },
-) {
+export async function addTrack(pairId: string, input: TrackInput) {
   const { error } = await supabase.rpc('add_track', {
     p_pair_id: pairId,
     p_name: input.name,
@@ -80,14 +98,12 @@ export async function addTrack(
     p_gain: input.gain,
     p_loss: input.loss,
     p_weekdays: input.weekdays,
+    p_visibility: input.visibility,
   });
   if (error) throw error;
 }
 
-export async function updateTrack(
-  trackId: string,
-  input: { name: string; kind: Kind; gain: number; loss: number; weekdays: number },
-) {
+export async function updateTrack(trackId: string, input: TrackInput) {
   const { error } = await supabase.rpc('update_track', {
     p_track_id: trackId,
     p_name: input.name,
@@ -95,8 +111,85 @@ export async function updateTrack(
     p_gain: input.gain,
     p_loss: input.loss,
     p_weekdays: input.weekdays,
+    p_visibility: input.visibility,
   });
   if (error) throw error;
+}
+
+export async function nudgeTrack(trackId: string) {
+  const { error } = await supabase.rpc('nudge_track', { p_track_id: trackId });
+  if (error) throw error;
+}
+
+export async function ensureProfile(): Promise<Profile | null> {
+  const { data, error } = await supabase.rpc('ensure_profile');
+  if (error) {
+    if (missingSchema(error)) return null;
+    throw error;
+  }
+  return data as Profile;
+}
+
+export async function updateProfile(displayName: string) {
+  const { error } = await supabase.rpc('update_profile', { p_display_name: displayName });
+  if (error) throw error;
+}
+
+export async function deleteAccount() {
+  const { error } = await supabase.rpc('delete_account');
+  if (error) throw error;
+}
+
+export async function friendFeed(): Promise<FeedItem[]> {
+  const { data, error } = await supabase.rpc('friend_feed');
+  if (error) throw error;
+  return (data ?? []) as FeedItem[];
+}
+
+export async function friendRankings(): Promise<Standing[]> {
+  const { data, error } = await supabase.rpc('friend_rankings');
+  if (error) throw error;
+  return (data ?? []) as Standing[];
+}
+
+export async function friendSuggestions(): Promise<FriendCard[]> {
+  const { data, error } = await supabase.rpc('friend_suggestions');
+  if (error) throw error;
+  return (data ?? []) as FriendCard[];
+}
+
+export async function friendRequests(): Promise<FriendRequest[]> {
+  const { data, error } = await supabase.rpc('friend_requests');
+  if (error) throw error;
+  return (data ?? []) as FriendRequest[];
+}
+
+export async function requestFriend(userId: string) {
+  const { error } = await supabase.rpc('request_friend', { p_user_id: userId });
+  if (error) throw error;
+}
+
+export async function respondFriend(friendshipId: string, accept: boolean) {
+  const { error } = await supabase.rpc('respond_friend', { p_friendship_id: friendshipId, p_accept: accept });
+  if (error) throw error;
+}
+
+export async function fetchOwned(pairIds: string[]) {
+  if (pairIds.length === 0) return { tracks: [], checks: [] };
+  const [tracks, checks] = await Promise.all([
+    supabase.from('tracks').select('*').in('pair_id', pairIds),
+    supabase.from('checks').select('*').in('pair_id', pairIds),
+  ]);
+  if (tracks.error) throw tracks.error;
+  if (checks.error) throw checks.error;
+  return {
+    tracks: (tracks.data ?? []).map((track) => ({
+      ...track,
+      weekdays: track.weekdays ?? 127,
+      visibility: track.visibility === 'public' ? 'public' : 'private',
+    })),
+    checks: checks.data ?? [],
+  };
 }
 
 export async function proposeTrack(
