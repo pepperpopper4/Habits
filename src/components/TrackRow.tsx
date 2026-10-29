@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { scheduleLabel } from '../lib/dates';
 import { formatPoints } from '../lib/score';
 import type { Track } from '../types';
@@ -49,6 +50,18 @@ export function TrackRow({
   const kindLabel = track.kind === 'habit' ? 'Habit' : 'Vice';
   const stateLabel = checked ? 'checked' : 'not checked';
   const days = scheduleLabel(track.weekdays);
+  const wasChecked = useRef(checked);
+  const [floated, setFloated] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (checked && !wasChecked.current) {
+      setFloated(`+${formatPoints(gain)}`);
+      const timer = window.setTimeout(() => setFloated(null), 640);
+      wasChecked.current = checked;
+      return () => window.clearTimeout(timer);
+    }
+    wasChecked.current = checked;
+  }, [checked, gain]);
   const box = (
     <span className="check-box">
       {checked ? <CheckMark /> : null}
@@ -56,7 +69,7 @@ export function TrackRow({
   );
 
   return (
-    <div className="track">
+    <div className={nudgeNote ? 'track sway' : 'track'}>
       {onEdit ? (
         <button type="button" className="track-text" onClick={() => onEdit(track)}>
           <span className="track-name">{track.name}</span>
@@ -71,7 +84,7 @@ export function TrackRow({
             ) : null}
             {track.visibility === 'public' ? (
               <>
-                <span aria-hidden="true"> · </span>Public
+                <span aria-hidden="true"> · </span>public
               </>
             ) : null}
           </span>
@@ -90,7 +103,7 @@ export function TrackRow({
             ) : null}
             {track.visibility === 'public' ? (
               <>
-                <span aria-hidden="true"> · </span>Public
+                <span aria-hidden="true"> · </span>public
               </>
             ) : null}
           </span>
@@ -99,22 +112,23 @@ export function TrackRow({
       {nudgeNote ? <p className="nudge-note">{nudgeNote}</p> : null}
       {canNudge && !checked && onNudge ? (
         <button type="button" className="nudge" disabled={busy || nudged} onClick={() => onNudge(track)}>
-          {nudged ? 'Nudged' : 'Nudge'}
+          {nudged ? 'nudged' : 'nudge'}
         </button>
       ) : null}
       {editable ? (
         <button
           type="button"
-          className={checked ? 'check on' : 'check'}
+          className={checked ? `check on ${track.kind}` : `check ${track.kind}`}
           aria-pressed={checked}
           aria-label={`${track.name}, ${kindLabel}, ${stateLabel}`}
           disabled={busy}
           onClick={() => onToggle(track, checked)}
         >
           {box}
+          {floated ? <span className="gain-chip">{floated}</span> : null}
         </button>
       ) : (
-        <span className={checked ? 'check on' : 'check'} role="img" aria-label={`${track.name}, ${kindLabel}, ${stateLabel}`}>
+        <span className={checked ? `check on ${track.kind}` : `check ${track.kind}`} role="img" aria-label={`${track.name}, ${kindLabel}, ${stateLabel}`}>
           {box}
         </span>
       )}

@@ -90,7 +90,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <form onSubmit={submit}>
           <div className="sheet-head">
-            <h2 id={titleId}>{mode === 'edit' ? 'Edit' : 'Add a habit or vice'}</h2>
+            <h2 id={titleId}>{mode === 'edit' ? 'edit' : 'add a habit or vice'}</h2>
             <button type="button" className="icon-button" onClick={onClose} disabled={busy} aria-label="Close">
               ×
             </button>
@@ -164,7 +164,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
               disabled={busy}
               onChange={(event) => setIsPublic(event.target.checked)}
             />
-            <span>Public</span>
+            <span>public</span>
           </label>
           <label className="daily-row">
             <input
@@ -177,7 +177,7 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
                 if (!next && days < 1) setDays(ALL_WEEKDAYS);
               }}
             />
-            <span>Daily</span>
+            <span>daily</span>
           </label>
           {daily ? null : (
             <div className="weekday-board" role="group" aria-label="Days">
@@ -202,10 +202,10 @@ export function AddTrackModal({ mode, initial, busy, error, onClose, onSubmit }:
           {localError || error ? <p className="error">{localError || error}</p> : null}
           <div className="sheet-actions">
             <button type="button" className="button" onClick={onClose} disabled={busy}>
-              Cancel
+              cancel
             </button>
             <button type="submit" className="button primary" disabled={busy}>
-              {mode === 'edit' ? 'Save' : 'Add it'}
+              {mode === 'edit' ? 'save' : 'add it'}
             </button>
           </div>
         </form>

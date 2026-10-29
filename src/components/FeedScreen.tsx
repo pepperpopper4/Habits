@@ -26,7 +26,7 @@ export function FeedScreen() {
   return (
     <main className="shell with-tabs">
       <header className="topbar">
-        <h1 className="brand">Feed</h1>
+        <h1 className="brand">feed</h1>
       </header>
       {error ? <p className="error">{error}</p> : null}
       {items && items.length === 0 ? <p className="empty">When a friend checks a public habit, it shows up here.</p> : null}

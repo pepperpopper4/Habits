@@ -145,7 +145,7 @@ export function ProfileScreen({ memberships, onSignOut, onAccountDeleted }: Prop
   return (
     <main className="shell with-tabs">
       <header className="topbar">
-        <h1 className="brand">Profile</h1>
+        <h1 className="brand">profile</h1>
       </header>
       <form onSubmit={(event) => void saveName(event)}>
         <label className="field">
@@ -153,12 +153,12 @@ export function ProfileScreen({ memberships, onSignOut, onAccountDeleted }: Prop
           <input value={name} maxLength={32} onChange={(event) => setName(event.target.value)} />
         </label>
         <button type="submit" className="button" disabled={busy || name.trim() === savedName}>
-          Save name
+          save name
         </button>
       </form>
       {error ? <p className="error">{error}</p> : null}
 
-      <h2>Friends</h2>
+      <h2>friends</h2>
       {suggestions.length === 0 && incoming.length === 0 && outgoing.length === 0 ? (
         <p className="empty">People you share a board with can be added here.</p>
       ) : null}
@@ -187,19 +187,19 @@ export function ProfileScreen({ memberships, onSignOut, onAccountDeleted }: Prop
         </div>
       ))}
 
-      <h2>Activity</h2>
+      <h2>activity</h2>
       <ActivityLog days={days} timeZone={timeZone} />
 
       <button type="button" className="text-button" onClick={onSignOut}>
-        Sign out
+        sign out
       </button>
       {confirmDelete ? (
         <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void removeAccount()}>
-          Delete account forever
+          delete account forever
         </button>
       ) : (
         <button type="button" className="text-button" onClick={() => setConfirmDelete(true)}>
-          Delete account
+          delete account
         </button>
       )}
     </main>

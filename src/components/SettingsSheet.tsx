@@ -551,7 +551,7 @@ export function SettingsSheet({
 
         <div className="sheet-actions end">
           <button type="button" className="button" onClick={onSignOut}>
-            Sign out
+            sign out
           </button>
         </div>
       </div>

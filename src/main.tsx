@@ -6,7 +6,8 @@ import { App } from './App';
 import './styles.css';
 
 if (Capacitor.isNativePlatform()) {
-  void StatusBar.setStyle({ style: Style.Light });
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  void StatusBar.setStyle({ style: dark ? Style.Light : Style.Dark });
 }
 
 createRoot(document.getElementById('root')!).render(

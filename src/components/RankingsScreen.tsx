@@ -32,7 +32,7 @@ export function RankingsScreen({ userId }: Props) {
   return (
     <main className="shell with-tabs">
       <header className="topbar">
-        <h1 className="brand">Rankings</h1>
+        <h1 className="brand">rankings</h1>
       </header>
       <p className="help">Today's public habits, among friends.</p>
       {error ? <p className="error">{error}</p> : null}
@@ -41,7 +41,7 @@ export function RankingsScreen({ userId }: Props) {
           <li key={row.user_id} className={row.user_id === userId ? 'rank-row mine' : 'rank-row'}>
             <span className="rank-place">{row.rank ?? '–'}</span>
             <span className="track-name">{row.user_id === userId ? 'You' : row.display_name}</span>
-            <span className="track-meta">{row.scheduled > 0 ? `${row.kept} of ${row.scheduled}` : 'No public habits'}</span>
+            <span className="track-meta">{row.scheduled > 0 ? `${row.kept} of ${row.scheduled}` : 'no public habits'}</span>
           </li>
         ))}
       </ol>

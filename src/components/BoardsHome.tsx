@@ -45,7 +45,7 @@ export function BoardsHome({ memberships, onOpen, onCreate }: Props) {
   return (
     <main className="shell with-tabs">
       <header className="topbar">
-        <h1 className="brand">Boards</h1>
+        <h1 className="brand">boards</h1>
       </header>
       {error ? <p className="error">{error}</p> : null}
       <div className="board-list">
@@ -60,7 +60,7 @@ export function BoardsHome({ memberships, onOpen, onCreate }: Props) {
         ))}
       </div>
       <button type="button" className="text-button" onClick={onCreate}>
-        Create or join a board
+        create or join a board
       </button>
     </main>
   );

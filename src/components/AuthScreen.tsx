@@ -18,8 +18,8 @@ export function SetupScreen() {
   return (
     <main className="shell">
       <section className="auth-card">
-        <p className="brand">Habits</p>
-        <h1>Connect a board</h1>
+        <p className="brand">habits</p>
+        <h1>connect a board</h1>
         <p className="help">
           Add your Supabase project URL and anon key to <code>.env.local</code>, then restart the app. The README lists the steps.
         </p>
@@ -67,8 +67,8 @@ export function AuthScreen({ onSignedIn }: AuthProps) {
   return (
     <main className="shell">
       <section className="auth-card">
-        <p className="brand">Habits</p>
-        <h1>{creating ? 'Create an account' : 'Sign in'}</h1>
+        <p className="brand">habits</p>
+        <h1>{creating ? 'create an account' : 'sign in'}</h1>
         <form onSubmit={(event) => void submit(event)}>
           <label className="field">
             <span>Email</span>
@@ -94,7 +94,7 @@ export function AuthScreen({ onSignedIn }: AuthProps) {
           {error ? <p className="error">{error}</p> : null}
           {notice ? <p className="help">{notice}</p> : null}
           <button type="submit" className="button primary wide" disabled={busy}>
-            {creating ? 'Create account' : 'Sign in'}
+            {creating ? 'create account' : 'sign in'}
           </button>
         </form>
         <button type="button" className="text-button" onClick={() => setCreating((value) => !value)}>
@@ -155,15 +155,15 @@ export function PairScreen({ onJoined, onSignOut, onCancel }: PairProps) {
   return (
     <main className="shell with-tabs">
       <section className="auth-card">
-        <p className="brand">Habits</p>
-        <h1>Start a board</h1>
+        <p className="brand">habits</p>
+        <h1>start a board</h1>
         <form onSubmit={(event) => void create(event)}>
           <label className="field">
             <span>Your name</span>
             <input value={name} onChange={(event) => setName(event.target.value)} maxLength={32} required />
           </label>
           <button type="submit" className="button primary wide" disabled={busy !== null}>
-            Create a board
+            create a board
           </button>
         </form>
         <p className="or">or join one</p>
@@ -181,17 +181,17 @@ export function PairScreen({ onJoined, onSignOut, onCancel }: PairProps) {
             />
           </label>
           <button type="submit" className="button wide" disabled={busy !== null}>
-            Join with a code
+            join with a code
           </button>
         </form>
         {error ? <p className="error">{error}</p> : null}
         {onCancel ? (
           <button type="button" className="text-button" onClick={onCancel}>
-            Back to boards
+            back to boards
           </button>
         ) : (
           <button type="button" className="text-button" onClick={onSignOut}>
-            Sign out
+            sign out
           </button>
         )}
       </section>

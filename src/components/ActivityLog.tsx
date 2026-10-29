@@ -74,13 +74,13 @@ export function ActivityLog({ days, timeZone }: Props) {
       </div>
       <p className="history-detail">{selected ? `${formatDayLabel(selected.day, timeZone)} · ${historyPhrase(selected)}` : null}</p>
       <div className="history-legend" aria-hidden="true">
-        <span>Lost</span>
+        <span>lost</span>
         <span className="history-cell lost" style={{ ['--level' as string]: 1 }} />
         <span className="history-cell lost" style={{ ['--level' as string]: 0.4 }} />
         <span className="history-cell flat" />
         <span className="history-cell kept" style={{ ['--level' as string]: 0.4 }} />
         <span className="history-cell kept" style={{ ['--level' as string]: 1 }} />
-        <span>Kept</span>
+        <span>kept</span>
       </div>
     </div>
   );

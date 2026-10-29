@@ -1,10 +1,10 @@
 type Tab = 'boards' | 'feed' | 'rankings' | 'profile';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'boards', label: 'Boards' },
-  { id: 'feed', label: 'Feed' },
-  { id: 'rankings', label: 'Rankings' },
-  { id: 'profile', label: 'Profile' },
+  { id: 'boards', label: 'boards' },
+  { id: 'feed', label: 'feed' },
+  { id: 'rankings', label: 'rankings' },
+  { id: 'profile', label: 'profile' },
 ];
 
 export type { Tab };

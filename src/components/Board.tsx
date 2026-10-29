@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { addTrack, messageFrom, nudgeTrack, updateTrack } from '../lib/api';
+import { hapticLight, hapticSelection, hapticSuccess } from '../lib/haptics';
 import { scoringFrom, showsOn } from '../lib/score';
 import { supabase } from '../lib/supabase';
 import { useBoard } from '../lib/useBoard';
@@ -116,6 +117,8 @@ function BoardReady({
   async function toggle(track: Track, checked: boolean) {
     setActionError(null);
     setBusyTrackId(track.id);
+    if (checked) void hapticSelection();
+    else void hapticLight();
     setData((current) => {
       if (!current) return current;
       const checks = checked
@@ -133,6 +136,10 @@ function BoardReady({
 
     if (result.error) setActionError(messageFrom(result.error));
     else if (checked && (result.data?.length ?? 0) === 0) setActionError('That day is locked.');
+    else if (!checked) {
+      const done = myTracks.every((item) => item.id === track.id || data.checks.some((check) => check.track_id === item.id && check.day === day));
+      if (myTracks.length > 0 && done) void hapticSuccess();
+    }
     await reload();
     setBusyTrackId(null);
   }
@@ -142,6 +149,7 @@ function BoardReady({
     setBusyTrackId(track.id);
     try {
       await nudgeTrack(track.id);
+      void hapticSelection();
       await reload();
     } catch (error) {
       setActionError(messageFrom(error));
@@ -184,10 +192,10 @@ function BoardReady({
       <header className="topbar">
         {onBack ? (
           <button type="button" className="text-button" onClick={onBack}>
-            Boards
+            boards
           </button>
         ) : (
-          <h1 className="brand">Habits</h1>
+          <h1 className="brand">habits</h1>
         )}
         <div className="topbar-actions">
           {memberships.length > 1 ? (

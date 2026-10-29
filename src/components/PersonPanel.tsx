@@ -78,7 +78,10 @@ export function PersonPanel({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <section className="panel" aria-label={person.display_name}>
+    <section
+      className={editable ? `panel mine sky-${tone}` : 'panel partner'}
+      aria-label={person.display_name}
+    >
       <div className="panel-head">
         <h2>
           <button type="button" className="name-button" onClick={() => setHistoryOpen(true)}>
@@ -87,7 +90,7 @@ export function PersonPanel({
         </h2>
         <p className="score-line">
           <span className="today-line">
-            <span className="today-label">Today</span>
+            <span className="today-label">today</span>
             <span
               className={`day-net ${tone}`}
               style={{ ['--level' as string]: level }}
